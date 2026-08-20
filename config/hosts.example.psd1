@@ -1,7 +1,7 @@
 ﻿@{
     # Defaults for every host. Any of these can be overridden per host.
     Defaults = @{
-        Transport       = 'winrm'                       # only 'winrm' in this version
+        Transport       = 'winrm'                       # 'winrm' or 'ssh'
 
         CredentialStore = '~\.winmesh\creds'            # where encrypted credentials are stored
 
@@ -14,6 +14,15 @@
         #   several at once      -> @('192.168.1.0/24','100.64.0.0/10')
         #   do not narrow (trusted LAN) -> @()
         AllowedSubnets  = @('100.64.0.0/10')
+
+        # --- ssh transport only (Transport = 'ssh') ---
+        # There is no Credential over ssh: the ssh client authenticates on its
+        # own, and on an overlay network it may need nothing at all.
+        SshUser         = ''                            # remote account; empty = let ssh decide
+        SshPort         = 22
+        SshShell        = 'powershell'                  # 'powershell' (5.1) or 'pwsh'
+        SshTimeout      = 15                            # seconds (ConnectTimeout)
+        SshOptions      = @()                           # extra -o options, e.g. @('StrictHostKeyChecking=accept-new')
     }
 
     # Your fleet. The key is a short name you will use to refer to the machine.
@@ -28,6 +37,14 @@
         # 'nas-lan' = @{
         #     Address    = '192.168.1.50'               # example: a machine on the LAN
         #     Credential = 'admin@nas-lan'
+        # }
+
+        # Same machine over ssh. Note what is absent: no Credential.
+        # 'workstation-02' = @{
+        #     Address   = 'workstation-02'              # overlay name resolved by the VPN client
+        #     Transport = 'ssh'
+        #     SshUser   = 'Administrator'
+        #     Note      = 'reached over NetBird; auth is by peer identity'
         # }
     }
 }

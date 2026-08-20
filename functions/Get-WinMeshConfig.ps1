@@ -33,14 +33,26 @@ function Get-WinMeshConfig {
     }
 
     # defaults
+    # USERPROFILE is unset outside Windows; fall back to HOME so that merely
+    # loading the config does not fail on a non-Windows controller (the ssh
+    # transport does not touch the credential store at all).
+    $home_ = if ($env:USERPROFILE) { $env:USERPROFILE } else { $HOME }
+
     $defaults = @{
         Transport       = 'winrm'
-        CredentialStore = (Join-Path $env:USERPROFILE '.winmesh\creds')
+        CredentialStore = (Join-Path $home_ '.winmesh\creds')
         # Subnets allowed to reach the WinRM port (firewall narrowing in the bootstrap).
         # Default is the CGNAT range 100.64.0.0/10, used by both Tailscale and
         # NetBird. For ZeroTier, a plain LAN, or your own addressing, set your own
         # subnets. An empty list means "do not narrow" (e.g. a trusted LAN).
         AllowedSubnets  = @('100.64.0.0/10')
+
+        # --- ssh transport (Transport = 'ssh') ---
+        SshUser     = ''                # remote account; empty = let ssh decide (config/agent/current user)
+        SshPort     = 22
+        SshShell    = 'powershell'      # 'powershell' (5.1, always present) or 'pwsh'
+        SshTimeout  = 15                # seconds, passed as ConnectTimeout
+        SshOptions  = @()               # extra -o options, e.g. @('StrictHostKeyChecking=accept-new')
     }
     if ($cfg.Defaults) {
         foreach ($k in $cfg.Defaults.Keys) { $defaults[$k] = $cfg.Defaults[$k] }
@@ -52,16 +64,21 @@ function Get-WinMeshConfig {
     $defaults.AllowedSubnets = @($defaults.AllowedSubnets)
 
     # expand ~ in the store path
-    $defaults.CredentialStore = $defaults.CredentialStore -replace '^~', $env:USERPROFILE
+    $defaults.CredentialStore = $defaults.CredentialStore -replace '^~', $home_
 
     # validate each host
     foreach ($name in $cfg.Hosts.Keys) {
         $h = $cfg.Hosts[$name]
-        if (-not $h.Address)    { throw "Host '$name': Address is missing (overlay/LAN IP or DNS name)." }
-        if (-not $h.Credential) { throw "Host '$name': Credential is missing (id of a stored credential)." }
-        if (-not $h.Transport)  { $h.Transport = $defaults.Transport }
-        if ($h.Transport -ne 'winrm') {
-            throw "Host '$name': transport '$($h.Transport)' is not supported yet. This version is winrm only."
+        if (-not $h.Address)   { throw "Host '$name': Address is missing (overlay/LAN IP or DNS name)." }
+        if (-not $h.Transport) { $h.Transport = $defaults.Transport }
+        if ($h.Transport -notin @('winrm', 'ssh')) {
+            throw "Host '$name': unknown transport '$($h.Transport)'. Supported: 'winrm', 'ssh'."
+        }
+        # Only WinRM needs a stored credential. Over ssh the client authenticates
+        # on its own — a key, an agent, or the peer identity of an overlay network
+        # such as NetBird, whose SSH server authenticates the peer, not the user.
+        if ($h.Transport -eq 'winrm' -and -not $h.Credential) {
+            throw "Host '$name': Credential is missing (id of a stored credential)."
         }
     }
 
