@@ -121,6 +121,82 @@ Test-WinMeshFleet          # check every host in the config at once
 
 ---
 
+## Usage examples
+
+Everything below assumes the host `workstation-01` is set up (Steps 1–5).
+
+**Run a command and read the result.** `Invoke-WinMeshCommand` returns real objects, not text — pipe them like anything else:
+
+```powershell
+Invoke-WinMeshCommand workstation-01 { Get-Service } |
+    Where-Object Status -eq 'Running' |
+    Measure-Object
+```
+
+**Pass arguments in.** Use `param()` in the block and `-ArgumentList`:
+
+```powershell
+Invoke-WinMeshCommand workstation-01 {
+    param($name, $days)
+    Get-EventLog -LogName System -After (Get-Date).AddDays(-$days) -EntryType Error |
+        Where-Object Source -like "*$name*"
+} -ArgumentList 'disk', 7
+```
+
+**Do the same thing on every machine in the fleet.** Loop over the config:
+
+```powershell
+$cfg = Get-WinMeshConfig
+foreach ($name in $cfg.Hosts.Keys) {
+    $free = Invoke-WinMeshCommand $name {
+        (Get-PSDrive C).Free / 1GB
+    }
+    "{0,-20} {1,6:N1} GB free on C:" -f $name, $free
+}
+```
+
+**Gate a script on channel health.** `Test-WinMeshHost -Quiet` returns an object with an `Ok` field and no output — good for automation:
+
+```powershell
+if (-not (Test-WinMeshHost -Name workstation-01 -Quiet).Ok) {
+    throw 'workstation-01 is unreachable — aborting'
+}
+# ... proceed knowing the channel works
+```
+
+**Check the whole fleet in a scheduled job:**
+
+```powershell
+$down = (Test-WinMeshFleet -Quiet) | Where-Object { -not $_.Ok }
+if ($down) {
+    "$($down.Count) machine(s) down: $($down.Host -join ', ')" | Send-Alert   # your notifier
+}
+```
+
+**Copy files to or from a host.** File transfer needs a live session; open one with the stored credential:
+
+```powershell
+$cfg  = Get-WinMeshConfig
+$h    = $cfg.Hosts['workstation-01']
+$cred = Import-Clixml (Join-Path $cfg.Defaults.CredentialStore "$($h.Credential -replace '[^\w.@-]','_').cred.xml")
+
+$s = New-PSSession -ComputerName $h.Address -Credential $cred
+Copy-Item .\report.csv -Destination 'C:\Temp\' -ToSession $s
+Copy-Item 'C:\Temp\log.txt' -Destination .\ -FromSession $s
+Remove-PSSession $s
+```
+
+**Use a different config file** (e.g. staging vs production):
+
+```powershell
+$env:WINMESH_CONFIG = 'C:\fleets\staging.psd1'
+Test-WinMeshFleet
+# or per-call:
+Invoke-WinMeshCommand nas-lan { hostname } -Config (Get-WinMeshConfig -Path .\lan.psd1)
+```
+
+---
+
 ## Adding more machines
 
 Repeat **Steps 1–5** for each new target. Day-to-day there is nothing to remember beyond the host's short name.
@@ -212,6 +288,10 @@ Collected from real debugging — each one cost time:
 ## Requirements
 
 Windows PowerShell 5.1 or PowerShell 7. A network giving machines stable, mutually reachable addresses — overlay (Tailscale, NetBird, ZeroTier) or plain LAN. Administrator rights only for `Connect-WinMeshHost` on the controller and the bootstrap on each target.
+
+## Contributing
+
+Contributions are welcome — see [CONTRIBUTING.md](CONTRIBUTING.md) for scope, conventions, and how to test. The project stays deliberately small and dependency-free.
 
 ## License
 
