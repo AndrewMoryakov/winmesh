@@ -35,11 +35,20 @@ function Get-WinMeshConfig {
     $defaults = @{
         Transport       = 'winrm'
         CredentialStore = (Join-Path $env:USERPROFILE '.winmesh\creds')
-        TailscaleCidr   = '100.64.0.0/10'
+        # Подсети, которым разрешён порт WinRM (сужение брандмауэра в bootstrap).
+        # По умолчанию — диапазон CGNAT 100.64.0.0/10: его используют и Tailscale,
+        # и NetBird. Для ZeroTier, обычной локальной сети или своей адресации
+        # укажите свои подсети. Пустой список = не сужать (например, доверенный LAN).
+        AllowedSubnets  = @('100.64.0.0/10')
     }
     if ($cfg.Defaults) {
         foreach ($k in $cfg.Defaults.Keys) { $defaults[$k] = $cfg.Defaults[$k] }
     }
+    # Обратная совместимость со старым ключом TailscaleCidr.
+    if ($cfg.Defaults -and $cfg.Defaults.TailscaleCidr -and -not ($cfg.Defaults.Keys -contains 'AllowedSubnets')) {
+        $defaults.AllowedSubnets = @($cfg.Defaults.TailscaleCidr)
+    }
+    $defaults.AllowedSubnets = @($defaults.AllowedSubnets)
 
     # раскрыть ~ в пути к хранилищу
     $defaults.CredentialStore = $defaults.CredentialStore -replace '^~', $env:USERPROFILE
@@ -47,7 +56,7 @@ function Get-WinMeshConfig {
     # проверка каждой машины
     foreach ($name in $cfg.Hosts.Keys) {
         $h = $cfg.Hosts[$name]
-        if (-not $h.Address)    { throw "Машина '$name': не задан Address (Tailscale-адрес или MagicDNS-имя)." }
+        if (-not $h.Address)    { throw "Машина '$name': не задан Address (IP в оверлейной сети/LAN или DNS-имя)." }
         if (-not $h.Credential) { throw "Машина '$name': не задан Credential (идентификатор записи в хранилище)." }
         if (-not $h.Transport)  { $h.Transport = $defaults.Transport }
         if ($h.Transport -ne 'winrm') {
