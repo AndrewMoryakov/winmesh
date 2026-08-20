@@ -17,4 +17,11 @@
     CmdletsToExport   = @()
     AliasesToExport   = @()
     VariablesToExport = @()
+    PrivateData = @{
+        PSData = @{
+            LicenseUri = 'https://github.com/AndrewMoryakov/winmesh/blob/main/LICENSE'
+            ProjectUri = 'https://github.com/AndrewMoryakov/winmesh'
+            Tags       = @('Windows','WinRM','Tailscale','PSRemoting','mesh-vpn','remote-management')
+        }
+    }
 }
