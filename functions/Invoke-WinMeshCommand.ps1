@@ -4,6 +4,9 @@
 .DESCRIPTION
     Resolves the address and credentials from the config and calls Invoke-Command.
     Replaces the manual "import cred + remember the IP" with "name the machine".
+
+    Hosts with Transport = 'ssh' go through the ssh transport instead. Either way
+    the return value is real objects, not text.
 .PARAMETER Name
     Machine name from the config.
 .PARAMETER ScriptBlock
@@ -27,6 +30,11 @@ function Invoke-WinMeshCommand {
     if (-not $Config) { $Config = Get-WinMeshConfig }
     $h = $Config.Hosts[$Name]
     if (-not $h) { throw "Host '$Name' is not in config $($Config.Path)." }
+
+    if ($h.Transport -eq 'ssh') {
+        return Invoke-WinMeshSsh -HostEntry $h -Defaults $Config.Defaults `
+            -ScriptBlock $ScriptBlock -ArgumentList $ArgumentList
+    }
 
     $cred = Get-WinMeshCredential -Id $h.Credential -Store $Config.Defaults.CredentialStore
 
