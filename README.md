@@ -1,4 +1,10 @@
-﻿# winmesh
+# winmesh
+
+[![License: MIT](https://img.shields.io/badge/License-MIT-informational.svg)](LICENSE)
+[![PowerShell 5.1+ | 7](https://img.shields.io/badge/PowerShell-5.1%2B%20%7C%207-5391FE.svg?logo=powershell&logoColor=white)](https://learn.microsoft.com/powershell/)
+[![Platform: Windows](https://img.shields.io/badge/Platform-Windows-0078D6.svg?logo=windows&logoColor=white)](https://github.com/AndrewMoryakov/winmesh)
+[![Transport: WinRM + Tailscale](https://img.shields.io/badge/Transport-WinRM%20%2B%20Tailscale-2E7D57.svg)](https://tailscale.com/)
+[![Version](https://img.shields.io/badge/version-0.1.0-blue.svg)](winmesh.psd1)
 
 Тонкий слой для связывания Windows-машин по PowerShell Remoting поверх mesh-VPN. Называешь машину по имени — выполняешь на ней команды. Только Windows.
 
