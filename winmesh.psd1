@@ -4,7 +4,7 @@
     GUID              = 'b8f1e6a2-3c4d-4e5f-9a0b-1c2d3e4f5a6b'
     Author            = 'Andrew Moryakov'
     Copyright         = '(c) 2026 Andrew Moryakov. MIT License.'
-    Description       = 'Тонкий opinionated-слой для связывания Windows-машин по WinRM: адресация по имени из конфига, проверка канала, генератор bootstrap. Работает поверх любой сети со стабильными адресами — оверлейной (Tailscale, NetBird, ZeroTier) или локальной. Только Windows.'
+    Description       = 'A thin opinionated layer for linking Windows machines over WinRM: name-based addressing from a config, channel checks, a bootstrap generator. Works over any network with stable addresses — overlay (Tailscale, NetBird, ZeroTier) or plain LAN. Windows only.'
     PowerShellVersion = '5.1'
     FunctionsToExport = @(
         'Get-WinMeshConfig',

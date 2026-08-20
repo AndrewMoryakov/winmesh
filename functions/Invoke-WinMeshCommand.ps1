@@ -1,15 +1,15 @@
 ﻿<#
 .SYNOPSIS
-    Выполняет команду на машине парка по имени из конфига.
+    Runs a command on a fleet machine by its config name.
 .DESCRIPTION
-    Резолвит адрес и учётные данные из конфига и вызывает Invoke-Command.
-    Это замена ручного «импортировать cred + помнить IP» на «назвать машину».
+    Resolves the address and credentials from the config and calls Invoke-Command.
+    Replaces the manual "import cred + remember the IP" with "name the machine".
 .PARAMETER Name
-    Имя машины из конфига.
+    Machine name from the config.
 .PARAMETER ScriptBlock
-    Что выполнить на той стороне.
+    What to run on the other side.
 .PARAMETER ArgumentList
-    Аргументы, пробрасываемые в ScriptBlock (через param в блоке).
+    Arguments passed into the ScriptBlock (via param in the block).
 .EXAMPLE
     Invoke-WinMeshCommand workstation-01 { hostname; whoami }
 .EXAMPLE
@@ -26,7 +26,7 @@ function Invoke-WinMeshCommand {
 
     if (-not $Config) { $Config = Get-WinMeshConfig }
     $h = $Config.Hosts[$Name]
-    if (-not $h) { throw "Машины '$Name' нет в конфиге $($Config.Path)." }
+    if (-not $h) { throw "Host '$Name' is not in config $($Config.Path)." }
 
     $cred = Get-WinMeshCredential -Id $h.Credential -Store $Config.Defaults.CredentialStore
 

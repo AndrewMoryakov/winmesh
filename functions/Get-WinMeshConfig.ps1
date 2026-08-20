@@ -1,10 +1,11 @@
 ﻿<#
 .SYNOPSIS
-    Загружает и проверяет конфиг парка машин.
+    Loads and validates the fleet config.
 .DESCRIPTION
-    Конфиг — файл .psd1 (не YAML: у Windows PowerShell 5.1 нет встроенного парсера
-    YAML, а .psd1 читается безопасно через Import-PowerShellDataFile без выполнения кода).
-    Путь по умолчанию: $env:WINMESH_CONFIG, иначе config\hosts.psd1 рядом с модулем.
+    The config is a .psd1 file (not YAML: Windows PowerShell 5.1 has no built-in
+    YAML parser, whereas .psd1 is parsed safely via Import-PowerShellDataFile
+    without executing code). Default path: $env:WINMESH_CONFIG, otherwise
+    config\hosts.psd1 next to the module.
 .EXAMPLE
     $cfg = Get-WinMeshConfig
     $cfg.Hosts.Keys
@@ -22,45 +23,45 @@ function Get-WinMeshConfig {
         $Path = Join-Path (Split-Path $PSScriptRoot -Parent) 'config\hosts.psd1'
     }
     if (-not (Test-Path -LiteralPath $Path)) {
-        throw "Конфиг не найден: $Path. Скопируйте config\hosts.example.psd1 в config\hosts.psd1 и впишите свои машины."
+        throw "Config not found: $Path. Copy config\hosts.example.psd1 to config\hosts.psd1 and fill in your machines."
     }
 
     $cfg = Import-PowerShellDataFile -LiteralPath $Path
 
     if (-not $cfg.Hosts -or $cfg.Hosts.Count -eq 0) {
-        throw "В конфиге $Path нет ни одной машины (секция Hosts пуста)."
+        throw "Config $Path has no machines (the Hosts section is empty)."
     }
 
-    # значения по умолчанию
+    # defaults
     $defaults = @{
         Transport       = 'winrm'
         CredentialStore = (Join-Path $env:USERPROFILE '.winmesh\creds')
-        # Подсети, которым разрешён порт WinRM (сужение брандмауэра в bootstrap).
-        # По умолчанию — диапазон CGNAT 100.64.0.0/10: его используют и Tailscale,
-        # и NetBird. Для ZeroTier, обычной локальной сети или своей адресации
-        # укажите свои подсети. Пустой список = не сужать (например, доверенный LAN).
+        # Subnets allowed to reach the WinRM port (firewall narrowing in the bootstrap).
+        # Default is the CGNAT range 100.64.0.0/10, used by both Tailscale and
+        # NetBird. For ZeroTier, a plain LAN, or your own addressing, set your own
+        # subnets. An empty list means "do not narrow" (e.g. a trusted LAN).
         AllowedSubnets  = @('100.64.0.0/10')
     }
     if ($cfg.Defaults) {
         foreach ($k in $cfg.Defaults.Keys) { $defaults[$k] = $cfg.Defaults[$k] }
     }
-    # Обратная совместимость со старым ключом TailscaleCidr.
+    # Backward compatibility with the old TailscaleCidr key.
     if ($cfg.Defaults -and $cfg.Defaults.TailscaleCidr -and -not ($cfg.Defaults.Keys -contains 'AllowedSubnets')) {
         $defaults.AllowedSubnets = @($cfg.Defaults.TailscaleCidr)
     }
     $defaults.AllowedSubnets = @($defaults.AllowedSubnets)
 
-    # раскрыть ~ в пути к хранилищу
+    # expand ~ in the store path
     $defaults.CredentialStore = $defaults.CredentialStore -replace '^~', $env:USERPROFILE
 
-    # проверка каждой машины
+    # validate each host
     foreach ($name in $cfg.Hosts.Keys) {
         $h = $cfg.Hosts[$name]
-        if (-not $h.Address)    { throw "Машина '$name': не задан Address (IP в оверлейной сети/LAN или DNS-имя)." }
-        if (-not $h.Credential) { throw "Машина '$name': не задан Credential (идентификатор записи в хранилище)." }
+        if (-not $h.Address)    { throw "Host '$name': Address is missing (overlay/LAN IP or DNS name)." }
+        if (-not $h.Credential) { throw "Host '$name': Credential is missing (id of a stored credential)." }
         if (-not $h.Transport)  { $h.Transport = $defaults.Transport }
         if ($h.Transport -ne 'winrm') {
-            throw "Машина '$name': транспорт '$($h.Transport)' пока не поддерживается. В этой версии только winrm."
+            throw "Host '$name': transport '$($h.Transport)' is not supported yet. This version is winrm only."
         }
     }
 

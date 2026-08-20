@@ -1,10 +1,10 @@
-# Реальный конфиг парка — у каждого свой, в репозиторий не кладём.
+# Your real fleet config — everyone has their own, keep it out of the repo.
 config/hosts.psd1
 
-# Хранилище учётных данных. DPAPI-файлы бесполезны на другой машине, но незачем
-# и рисковать — держим вне git.
+# Credential store. DPAPI files are useless on another machine, but there is no
+# reason to risk it — keep it out of git.
 .winmesh/
 *.cred.xml
 
-# Сгенерированные bootstrap-скрипты для конкретных машин.
+# Generated per-machine bootstrap scripts.
 bootstrap-*.ps1

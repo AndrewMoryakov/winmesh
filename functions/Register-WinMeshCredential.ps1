@@ -1,19 +1,19 @@
 ﻿<#
 .SYNOPSIS
-    Сохраняет учётные данные машины в зашифрованный файл (DPAPI).
+    Saves a machine's credentials to an encrypted file (DPAPI).
 .DESCRIPTION
-    Пароль шифруется через Export-Clixml/DPAPI: файл расшифровывается ТОЛЬКО той
-    учётной записью и ТОЛЬКО на той машине, где создан. Скопированный в другое
-    место он бесполезен — поэтому хранилище по своей природе локально и в git
-    попадать не должно.
+    The password is encrypted with Export-Clixml/DPAPI: the file can only be
+    decrypted by the same account on the same machine where it was created.
+    Copied elsewhere it is useless — so the store is inherently local and must
+    never end up in git.
 
-    Имя пользователя для НЕ доменной целевой машины задаётся как
-    ИМЯ-КОМПЬЮТЕРА\логин — часть до \ направляет проверку в локальную базу той машины.
+    For a non-domain target, give the username as COMPUTERNAME\user — the part
+    before the backslash directs authentication to that machine's local database.
 .PARAMETER Id
-    Идентификатор записи. На него ссылается поле Credential в конфиге.
+    Credential id. The Credential field in the config refers to it.
 .EXAMPLE
     Register-WinMeshCredential -Id 'admin@workstation-01'
-    # откроется запрос логина/пароля; логин: workstation-01\admin
+    # a login/password prompt appears; login: workstation-01\admin
 #>
 function Register-WinMeshCredential {
     [CmdletBinding()]
@@ -32,27 +32,27 @@ function Register-WinMeshCredential {
     }
 
     if (-not $Credential) {
-        # GUI-окно всплывает не всегда (встроенные оболочки) — тогда просим в консоли
-        $Credential = Get-Credential -Message "Учётные данные для '$Id' (логин вида КОМП\пользователь)"
+        # the GUI prompt does not always appear (e.g. embedded hosts) — fall back to console input
+        $Credential = Get-Credential -Message "Credentials for '$Id' (login like COMPUTER\user)"
         if (-not $Credential) {
-            $user = Read-Host 'Логин (КОМП\пользователь)'
-            $pass = Read-Host 'Пароль' -AsSecureString
+            $user = Read-Host 'Login (COMPUTER\user)'
+            $pass = Read-Host 'Password' -AsSecureString
             $Credential = New-Object System.Management.Automation.PSCredential($user, $pass)
         }
     }
 
     $file = Join-Path $Store ((($Id -replace '[^\w.@-]', '_')) + '.cred.xml')
     $Credential | Export-Clixml -LiteralPath $file
-    Write-Host "Сохранено: $file  (пользователь $($Credential.UserName))" -ForegroundColor Green
-    Write-Host 'Файл зашифрован DPAPI — читается только этой учёткой на этой машине.' -ForegroundColor DarkGray
+    Write-Host "Saved: $file  (user $($Credential.UserName))" -ForegroundColor Green
+    Write-Host 'The file is DPAPI-encrypted — readable only by this account on this machine.' -ForegroundColor DarkGray
 }
 
-# Внутренний резолвер — не экспортируется.
+# Internal resolver — not exported.
 function Get-WinMeshCredential {
     param([Parameter(Mandatory)] [string]$Id, [Parameter(Mandatory)] [string]$Store)
     $file = Join-Path $Store ((($Id -replace '[^\w.@-]', '_')) + '.cred.xml')
     if (-not (Test-Path -LiteralPath $file)) {
-        throw "Нет учётных данных '$Id'. Создайте: Register-WinMeshCredential -Id '$Id'"
+        throw "No credential '$Id'. Create it: Register-WinMeshCredential -Id '$Id'"
     }
     Import-Clixml -LiteralPath $file
 }

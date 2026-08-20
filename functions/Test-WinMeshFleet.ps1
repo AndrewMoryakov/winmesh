@@ -1,13 +1,13 @@
 ﻿<#
 .SYNOPSIS
-    Проверяет канал до всех машин парка разом.
+    Checks the channel to every machine in the fleet at once.
 .DESCRIPTION
-    Прогоняет Test-WinMeshHost по каждой машине конфига и печатает сводку.
-    Код возврата процесса не ставит (это функция) — используйте поле Ok в результате.
+    Runs Test-WinMeshHost for each machine in the config and prints a summary.
+    Does not set a process exit code (it is a function) — use the Ok field in the result.
 .EXAMPLE
     Test-WinMeshFleet
 .EXAMPLE
-    if ((Test-WinMeshFleet).Where({ -not $_.Ok })) { 'есть недоступные машины' }
+    if ((Test-WinMeshFleet).Where({ -not $_.Ok })) { 'some machines are unreachable' }
 #>
 function Test-WinMeshFleet {
     [CmdletBinding()]
@@ -23,19 +23,19 @@ function Test-WinMeshFleet {
     }
 
     if (-not $Quiet) {
-        Write-Host "`n=== Сводка по парку ===" -ForegroundColor Cyan
+        Write-Host "`n=== Fleet summary ===" -ForegroundColor Cyan
         foreach ($r in $results) {
             $mark  = if ($r.Ok) { '  OK  ' } else { ' FAIL ' }
             $color = if ($r.Ok) { 'Green' } else { 'Red' }
             $failed = ($r.Checks | Where-Object { -not $_.Ok } | ForEach-Object { $_.Check }) -join ', '
             Write-Host $mark -NoNewline -ForegroundColor $color
             Write-Host (" {0,-24} {1}" -f $r.Host, $r.Address) -NoNewline
-            if ($failed) { Write-Host "  — не пройдено: $failed" -ForegroundColor DarkGray } else { Write-Host '' }
+            if ($failed) { Write-Host "  - failed: $failed" -ForegroundColor DarkGray } else { Write-Host '' }
         }
         $bad = @($results | Where-Object { -not $_.Ok }).Count
         Write-Host ''
-        if ($bad -eq 0) { Write-Host 'Все машины доступны.' -ForegroundColor Green }
-        else { Write-Host "Недоступны: $bad из $($results.Count)" -ForegroundColor Yellow }
+        if ($bad -eq 0) { Write-Host 'All machines reachable.' -ForegroundColor Green }
+        else { Write-Host "Unreachable: $bad of $($results.Count)" -ForegroundColor Yellow }
     }
 
     $results

@@ -1,15 +1,15 @@
 ﻿<#
 .SYNOPSIS
-    Проверяет готовность канала до одной машины парка.
+    Checks that the channel to one fleet machine is ready.
 .DESCRIPTION
-    Проверяет всю цепочку и возвращает структурированный результат (пригодный для
-    автоматики), плюс печатает читаемый отчёт, если не задан -Quiet:
-      * достижимость порта WinRM поверх mesh-VPN;
-      * ответ WS-Management с той стороны;
-      * наличие и читаемость учётных данных;
-      * фактическое выполнение команды и уровень прав.
+    Checks the whole chain and returns a structured result (suitable for
+    automation), and prints a readable report unless -Quiet is set:
+      * WinRM port reachable over the network;
+      * WS-Management responds from the other side;
+      * credentials present and readable;
+      * a command actually runs, and the privilege level.
 .PARAMETER Quiet
-    Не печатать, только вернуть объект.
+    Do not print; return the object only.
 .EXAMPLE
     Test-WinMeshHost -Name workstation-01
 #>
@@ -23,30 +23,30 @@ function Test-WinMeshHost {
 
     if (-not $Config) { $Config = Get-WinMeshConfig }
     $h = $Config.Hosts[$Name]
-    if (-not $h) { throw "Машины '$Name' нет в конфиге $($Config.Path)." }
+    if (-not $h) { throw "Host '$Name' is not in config $($Config.Path)." }
 
     $checks = New-Object System.Collections.Generic.List[object]
     function Add-Check($label, $ok, $detail) {
         $checks.Add([pscustomobject]@{ Check = $label; Ok = [bool]$ok; Detail = "$detail" })
     }
 
-    # 1. порт
+    # 1. port
     $port = Test-NetConnection -ComputerName $h.Address -Port 5985 -WarningAction SilentlyContinue
-    Add-Check 'порт WinRM 5985' $port.TcpTestSucceeded $(if ($port.TcpTestSucceeded) { $h.Address } else { 'нет соединения' })
+    Add-Check 'WinRM port 5985' $port.TcpTestSucceeded $(if ($port.TcpTestSucceeded) { $h.Address } else { 'no connection' })
 
     # 2. WS-Management
     $wsman = $false
     if ($port.TcpTestSucceeded) {
         try { Test-WSMan -ComputerName $h.Address -ErrorAction Stop | Out-Null; $wsman = $true } catch { }
     }
-    Add-Check 'ответ WS-Management' $wsman $(if ($wsman) { 'отвечает' } else { 'нет ответа' })
+    Add-Check 'WS-Management responds' $wsman $(if ($wsman) { 'responds' } else { 'no response' })
 
-    # 3. учётные данные
+    # 3. credentials
     $cred = $null
     try { $cred = Get-WinMeshCredential -Id $h.Credential -Store $Config.Defaults.CredentialStore } catch { }
-    Add-Check 'учётные данные' ([bool]$cred) $(if ($cred) { $cred.UserName } else { "нет записи '$($h.Credential)'" })
+    Add-Check 'credentials' ([bool]$cred) $(if ($cred) { $cred.UserName } else { "no entry '$($h.Credential)'" })
 
-    # 4. выполнение боем
+    # 4. actually run a command
     if ($cred -and $wsman) {
         try {
             $r = Invoke-Command -ComputerName $h.Address -Credential $cred -ErrorAction Stop -ScriptBlock {
@@ -56,10 +56,10 @@ function Test-WinMeshHost {
                     Admin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole('Administrators')
                 }
             }
-            Add-Check 'команда выполняется' $true "$($r.Host) / $($r.User)"
-            Add-Check 'полный админ-токен' $r.Admin $(if ($r.Admin) { 'да' } else { 'урезан (LocalAccountTokenFilterPolicy на цели)' })
+            Add-Check 'command runs' $true "$($r.Host) / $($r.User)"
+            Add-Check 'full admin token' $r.Admin $(if ($r.Admin) { 'yes' } else { 'reduced (set LocalAccountTokenFilterPolicy on the target)' })
         } catch {
-            Add-Check 'команда выполняется' $false (($_.Exception.Message -split "`n")[0])
+            Add-Check 'command runs' $false (($_.Exception.Message -split "`n")[0])
         }
     }
 
@@ -72,7 +72,7 @@ function Test-WinMeshHost {
             $color = if ($c.Ok) { 'Green' } else { 'Red' }
             Write-Host $mark -NoNewline -ForegroundColor $color
             Write-Host " $($c.Check)" -NoNewline
-            if ($c.Detail) { Write-Host "  — $($c.Detail)" -ForegroundColor DarkGray } else { Write-Host '' }
+            if ($c.Detail) { Write-Host "  - $($c.Detail)" -ForegroundColor DarkGray } else { Write-Host '' }
         }
     }
 
