@@ -356,6 +356,45 @@ Over SSH specifically:
 - **On an overlay network, the server answering port 22 may not be the one you configured.** NetBird ships its own SSH server and takes the port on the overlay address, so the Windows OpenSSH service you set up can sit there unused. `Test-WinMeshHost` prints the SSH banner for exactly this reason — read it.
 - **A session opened by an overlay's SSH server may not carry a full admin token,** even for an Administrator account. `Test-WinMeshHost` reports this as a separate check rather than letting it surface later as a confusing access-denied.
 
+On a **non-English Windows**, or a domain-joined machine whose DC is unreachable:
+
+- **`IsInRole('Administrators')` throws — it does not return `$false`.** The
+  built-in group is localized (`BUILTIN\Администраторы` on a Russian install),
+  and the string overload resolves by *name*. Measured: the English literal
+  raised `MethodInvocationException`, while the localized name, the
+  `[WindowsBuiltInRole]::Administrator` enum, and the raw SID all returned
+  `$true` on the same box. Because the throw happens *inside* the remote
+  scriptblock, the whole call fails and a perfectly healthy channel gets
+  reported as `command runs: False`. Always use the enum or `S-1-5-32-544`,
+  never the English name.
+- **`icacls` and `Add-LocalGroupMember` fail the same way, for a different
+  reason.** Passing the name `"Administrators"` makes Windows resolve it, and on
+  a domain-joined machine that query goes to a domain controller — so with the
+  DC unreachable you get *"could not establish trust relationship with the
+  primary domain"* while doing something entirely local. Well-known SIDs need no
+  lookup: `icacls f /grant "*S-1-5-32-544:F" /grant "*S-1-5-18:F"`, and
+  `Add-LocalGroupMember -Group (Get-LocalGroup -SID S-1-5-32-544)`.
+- **A domain account can pass publickey auth and still fail to open a session.**
+  The OpenSSH log shows `Accepted publickey for <user>`, then the client sees
+  `Connection reset by peer` — and **nothing further is logged**, because the
+  failure is past sshd's logging. Key-based logon builds the user's token via
+  S4U, which for a domain account needs a live DC; your own interactive session
+  works only because it runs on cached credentials, which sshd cannot use. The
+  fix is not an sshd setting — use a **local** account. On a domain-joined
+  machine, `Get-LocalGroupMember -SID S-1-5-32-544` usually reveals one already.
+- **Pasting a key into a console can split it, and sshd will not tell you.** A
+  long `$key = 'ssh-ed25519 …'` line wraps at the console width, the newline
+  lands *inside* the string, and `authorized_keys` receives two fragments.
+  Malformed lines are skipped silently, so the symptom is a plain
+  `Permission denied` with a correct-looking file. Verify with lengths, not by
+  eye — a valid ed25519 line is a single ~110-character row:
+  `Get-Content $f | ForEach-Object { $_.Length }`.
+- **Admin keys live somewhere else entirely.** For any account in the
+  administrators group, stock `sshd_config` carries
+  `Match Group administrators` → `__PROGRAMDATA__/ssh/administrators_authorized_keys`.
+  A key placed in `C:\Users\<name>\.ssh\authorized_keys` is ignored, and so is
+  that shared file if its ACL is wider than SYSTEM + Administrators.
+
 ---
 
 ## Requirements

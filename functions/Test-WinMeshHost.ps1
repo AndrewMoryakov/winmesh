@@ -48,7 +48,7 @@ function Test-WinMeshHost {
                     [PSCustomObject]@{
                         Host  = $env:COMPUTERNAME
                         User  = whoami
-                        Admin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole('Administrators')
+                        Admin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
                     }
                 }
                 Add-Check 'command runs' $true "$($r.Host) / $($r.User)"
@@ -82,7 +82,7 @@ function Test-WinMeshHost {
                     [PSCustomObject]@{
                         Host  = $env:COMPUTERNAME
                         User  = whoami
-                        Admin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole('Administrators')
+                        Admin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
                     }
                 }
                 Add-Check 'command runs' $true "$($r.Host) / $($r.User)"
