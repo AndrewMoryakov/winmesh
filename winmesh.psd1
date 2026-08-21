@@ -1,6 +1,6 @@
 ﻿@{
     RootModule        = 'winmesh.psm1'
-    ModuleVersion     = '0.2.0'
+    ModuleVersion     = '0.2.1'
     GUID              = 'b8f1e6a2-3c4d-4e5f-9a0b-1c2d3e4f5a6b'
     Author            = 'Andrew Moryakov'
     Copyright         = '(c) 2026 Andrew Moryakov. MIT License.'

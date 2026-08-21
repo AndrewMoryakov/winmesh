@@ -4,7 +4,7 @@
 [![PowerShell 5.1+ | 7](https://img.shields.io/badge/PowerShell-5.1%2B%20%7C%207-5391FE.svg?logo=powershell&logoColor=white)](https://learn.microsoft.com/powershell/)
 [![Platform: Windows](https://img.shields.io/badge/Platform-Windows-0078D6.svg?logo=windows&logoColor=white)](https://github.com/AndrewMoryakov/winmesh)
 [![Transport: WinRM | SSH](https://img.shields.io/badge/Transport-WinRM%20%7C%20SSH-2E7D57.svg)](https://learn.microsoft.com/windows/win32/winrm/portal)
-[![Version](https://img.shields.io/badge/version-0.2.0-blue.svg)](winmesh.psd1)
+[![Version](https://img.shields.io/badge/version-0.2.1-blue.svg)](winmesh.psd1)
 
 A thin layer for linking Windows machines over PowerShell Remoting **or SSH**. Name a host, run commands on it. Windows only.
 
