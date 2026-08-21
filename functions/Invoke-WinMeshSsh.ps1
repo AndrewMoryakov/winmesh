@@ -48,7 +48,10 @@ function New-WinMeshSshPayload {
     )
 
     $sbB64   = ConvertTo-WinMeshB64 -Text $ScriptBlock.ToString()
-    $argsB64 = ConvertTo-WinMeshB64 -Text ([System.Management.Automation.PSSerializer]::Serialize(@($ArgumentList)))
+    # No args must mean no positional argument, not an explicit $null (that would
+    # override a scriptblock's defaulted parameter). Normalise null to an empty list.
+    $argList = if ($null -eq $ArgumentList) { @() } else { @($ArgumentList) }
+    $argsB64 = ConvertTo-WinMeshB64 -Text ([System.Management.Automation.PSSerializer]::Serialize($argList))
 
     @"
 `$ErrorActionPreference = 'Stop'
@@ -81,7 +84,7 @@ function New-WinMeshSshArgs {
     $user    = if ($HostEntry.SshUser)    { $HostEntry.SshUser }    else { $Defaults.SshUser }
     $shell   = if ($HostEntry.SshShell)   { $HostEntry.SshShell }   else { $Defaults.SshShell }
     $timeout = if ($HostEntry.SshTimeout) { $HostEntry.SshTimeout } else { $Defaults.SshTimeout }
-    $extra   = @(if ($HostEntry.SshOptions) { $HostEntry.SshOptions } else { $Defaults.SshOptions })
+    $extra   = @(if ($null -ne $HostEntry.SshOptions) { $HostEntry.SshOptions } else { $Defaults.SshOptions })
 
     $target = if ($user) { "$user@$($HostEntry.Address)" } else { $HostEntry.Address }
 
