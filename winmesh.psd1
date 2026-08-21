@@ -13,7 +13,9 @@
         'Invoke-WinMeshCommand',
         'Test-WinMeshHost',
         'Test-WinMeshFleet',
-        'New-WinMeshBootstrap'
+        'New-WinMeshBootstrap',
+        'Get-WinMeshFirewallScope',
+        'Set-WinMeshFirewallScope'
     )
     CmdletsToExport   = @()
     AliasesToExport   = @()

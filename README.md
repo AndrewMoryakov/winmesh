@@ -286,6 +286,62 @@ New-WinMeshBootstrap -AllowedSubnets '192.168.1.0/24' -OutFile .\bootstrap-lan.p
 
 ---
 
+## Seeing and changing which networks may connect
+
+`AllowedSubnets` is the single place that decides which source networks may reach
+a host's WinRM port. It is applied at bootstrap; view or re-apply it later without
+remembering firewall commands:
+
+```powershell
+Get-WinMeshFirewallScope -Name workstation-01            # current scope + whether it matches the config
+Set-WinMeshFirewallScope -Name workstation-01 -WhatIf    # preview
+Set-WinMeshFirewallScope -Name workstation-01            # apply the config's AllowedSubnets
+```
+
+`Set-WinMeshFirewallScope` refuses if narrowing would cut your own live session
+(no connected source falls inside the new ranges) — pass `-Force` only at the
+console. A host may override the global default with its own `AllowedSubnets`
+(e.g. a machine reachable through a different overlay):
+
+```powershell
+Hosts = @{
+    'nas-zt' = @{
+        Address        = '10.147.17.20'
+        Credential     = 'admin@nas-zt'
+        AllowedSubnets = @('10.147.17.0/24')   # this host only; overrides Defaults
+    }
+}
+```
+
+## Connecting from another network
+
+Two things must both hold to reach a host: the source must be able to *route* to
+the machine, and its address must fall inside `AllowedSubnets`.
+
+- **You are physically elsewhere (corporate, hotel, home).** Nothing to change —
+  Tailscale/NetBird runs over whatever internet you have, so you stay on the
+  overlay and the host is reachable at its overlay address. The usual case.
+- **Add another overlay (e.g. ZeroTier).** Join both machines to it, add its
+  subnet to `AllowedSubnets` (ZeroTier is not in the `100.64.0.0/10` CGNAT range),
+  run `Set-WinMeshFirewallScope`, and add the host's new address to `TrustedHosts`
+  on the controller.
+- **A specific trusted LAN, no overlay.** Add that subnet — as narrow as possible
+  (a `/24`, or a single `/32`) — weighing that anything on it can then reach WinRM.
+
+## Security notes
+
+- **Prefer overlay membership as the boundary.** Reaching a host means being on
+  its overlay, which requires your Tailscale/NetBird auth. The firewall range is a
+  second layer that rejects the physical LAN and public addresses.
+- **Do not open a whole corporate or public subnet to WinRM.** Reach the host over
+  the overlay from that network instead; the overlay tunnels over any internet.
+- **`AllowedSubnets` replaces, never appends.** List every network you want at once;
+  an empty list (`@()`) means "do not narrow" (`Any`) — only for a trusted LAN.
+- **WinRM 5985 is Negotiate/Kerberos-encrypted**, not plaintext, but it is still an
+  admin channel — keep the source range as tight as the setup allows.
+- **The rule's profile still matters.** It applies to Domain+Private; if an overlay
+  adapter is categorized Public the rule will not cover it. Keep overlay adapters
+  Private, or widen the rule's profile once the source range is set.
 ## Commands
 
 | Command | What it does | Runs on | Admin |

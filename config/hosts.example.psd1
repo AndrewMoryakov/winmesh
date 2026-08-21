@@ -1,4 +1,4 @@
-﻿@{
+@{
     # Defaults for every host. Any of these can be overridden per host.
     Defaults = @{
         Transport       = 'winrm'                       # 'winrm' or 'ssh'
@@ -33,6 +33,12 @@
             Credential = 'admin@workstation-01'         # id of the stored credential
             Note       = 'example: a workstation'       # optional free-text note
         }
+
+        # 'nas-zt' = @{
+        #     Address        = '10.147.17.20'   # e.g. a ZeroTier address
+        #     Credential     = 'admin@nas-zt'
+        #     AllowedSubnets = @('10.147.17.0/24')   # per-host; overrides Defaults.AllowedSubnets
+        # }
 
         # 'nas-lan' = @{
         #     Address    = '192.168.1.50'               # example: a machine on the LAN
