@@ -394,6 +394,33 @@ On a **non-English Windows**, or a domain-joined machine whose DC is unreachable
   `Match Group administrators` → `__PROGRAMDATA__/ssh/administrators_authorized_keys`.
   A key placed in `C:\Users\<name>\.ssh\authorized_keys` is ignored, and so is
   that shared file if its ACL is wider than SYSTEM + Administrators.
+- **The rule behind the first two: on a localized Windows, anything that
+  resolves or formats through the system locale is a portability bug.** Two
+  instances turned up within an hour on the same box — `IsInRole('Administrators')`
+  throwing, and a separate CLI whose `toLocaleString()` printed `1 401` where
+  `en-US` prints `1,401`, breaking its own output parser. Both look correct on
+  an English machine and neither is caught by a Linux test run. Pin the locale
+  (`toLocaleString('en-US')`) and address principals by SID.
+
+### Driving a target from a script
+
+- **Do not embed non-ASCII literals in a script you transfer.** A `.ps1`
+  carrying Cyrillic came out mangled after `scp`, and PowerShell 5.1 failed to
+  parse it — the BOM gotcha above, arriving through a different door. Derive the
+  localized string at run time instead, which needs no literal at all:
+  `([Security.Principal.SecurityIdentifier]'S-1-5-32-544').Translate([Security.Principal.NTAccount]).Value`.
+- **Do not hand-quote an ad-hoc command either.** The transport avoids this by
+  base64-packing (see above), but the same trap catches you at the console: a
+  one-off `powershell -Command "... try { } catch { } ..."` over `ssh` lost its
+  braces to two layers of quoting and died with `MissingCatchOrFinally`. Write a
+  file and run `powershell -File`, exactly as the transport effectively does.
+- **A large download initiated *on* the target may fail where a push from the
+  controller succeeds.** `Invoke-WebRequest` aborted with `IOException` partway
+  through a 100 MB file, and a `curl.exe -C -` resume then could not even open
+  the partial file, in a directory proven writable moments earlier. `scp` of the
+  same bytes from the controller worked first time. Cause not established —
+  security software is the obvious suspect, but it was not confirmed. Worth
+  knowing as a fallback rather than as an explanation.
 
 ---
 
