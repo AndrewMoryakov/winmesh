@@ -358,15 +358,17 @@ Over SSH specifically:
 
 On a **non-English Windows**, or a domain-joined machine whose DC is unreachable:
 
-- **`IsInRole('Administrators')` throws — it does not return `$false`.** The
-  built-in group is localized (`BUILTIN\Администраторы` on a Russian install),
-  and the string overload resolves by *name*. Measured: the English literal
-  raised `MethodInvocationException`, while the localized name, the
-  `[WindowsBuiltInRole]::Administrator` enum, and the raw SID all returned
-  `$true` on the same box. Because the throw happens *inside* the remote
-  scriptblock, the whole call fails and a perfectly healthy channel gets
-  reported as `command runs: False`. Always use the enum or `S-1-5-32-544`,
-  never the English name.
+- **`IsInRole('Administrators')` is unreliable on a localized Windows — it may
+  throw, or return a wrong `$false`.** The built-in group can be localized
+  (`BUILTIN\Администраторы` on a Russian install), and the string overload
+  resolves by *name*. Measured both ways: on a Russian install where the group
+  was localized, the English literal raised `MethodInvocationException`; on
+  another box an unmappable name simply returned `$false` (5.1 and 7 alike). The
+  localized name, the `[WindowsBuiltInRole]::Administrator` enum, and the raw SID
+  all returned the right answer. Either way a healthy channel gets reported as
+  `command runs: False` — a throw fails the whole call from *inside* the remote
+  scriptblock, and a wrong `$false` is just wrong. Always use the enum or
+  `S-1-5-32-544`, never the English name.
 - **`icacls` and `Add-LocalGroupMember` fail the same way, for a different
   reason.** Passing the name `"Administrators"` makes Windows resolve it, and on
   a domain-joined machine that query goes to a domain controller — so with the
