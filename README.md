@@ -62,9 +62,10 @@ git clone https://github.com/AndrewMoryakov/winmesh.git
 cd winmesh
 Import-Module .\winmesh.psd1
 
-New-WinMeshBootstrap -OutFile .\bootstrap.ps1     # copy to the target, run there once as Administrator
 Copy-Item .\config\hosts.example.psd1 .\config\hosts.psd1
-notepad .\config\hosts.psd1                       # add your machine (Address + Credential)
+notepad .\config\hosts.psd1                       # add your machine (Address + Credential) and set AllowedSubnets
+
+New-WinMeshBootstrap -OutFile .\bootstrap.ps1     # takes AllowedSubnets from the config; copy to the target, run there once as Administrator
 
 Register-WinMeshCredential -Id 'admin@workstation-01'   # login exactly as the bootstrap printed it
 Connect-WinMeshHost -Name workstation-01                # controller-side setup (admin, once)
@@ -73,7 +74,9 @@ Test-WinMeshHost    -Name workstation-01                # five green checks = su
 Invoke-WinMeshCommand workstation-01 { hostname; whoami }
 ```
 
-Targets reachable over SSH skip the credential and `Connect-WinMeshHost` steps — see [Over SSH instead of WinRM](#over-ssh-instead-of-winrm).
+Create the config **before** generating the bootstrap: `New-WinMeshBootstrap` takes the firewall scope from `AllowedSubnets` in `config\hosts.psd1`, and without a config it falls back to `100.64.0.0/10` (the Tailscale/NetBird range) — a controller on a plain LAN or ZeroTier would then be locked out. Or pass `-AllowedSubnets` explicitly — see [Choosing allowed subnets](#choosing-allowed-subnets).
+
+Targets reached over **SSH** skip the bootstrap, the credential and the `Connect-WinMeshHost` steps entirely — they need none of the WinRM changes. See [Over SSH instead of WinRM](#over-ssh-instead-of-winrm).
 
 ---
 
@@ -126,7 +129,9 @@ Copy `bootstrap.ps1` to the target (RDP, USB stick, or GPO in a domain) and run 
 
 Note the printed **LoginForCred** value — you will use it in Step 3.
 
-> If the target is already reachable by WinRM, skip this step.
+> The bootstrap takes `AllowedSubnets` from `config\hosts.psd1`. If the config does not exist yet, it falls back to `100.64.0.0/10` — do Step 2 first, or pass `-AllowedSubnets` explicitly (see [Choosing allowed subnets](#choosing-allowed-subnets)).
+>
+> If the target is already reachable by WinRM, or will be reached over SSH, skip this step.
 
 ### Step 2 · Add the target to your config (controller)
 
@@ -289,7 +294,7 @@ Invoke-WinMeshCommand workstation-02 { Get-Service } | Where-Object Status -eq '
 **There is no `Credential` field and no `Connect-WinMeshHost` step.** Over ssh the
 client authenticates on its own — a key, an agent, or, on an overlay network, the
 peer identity: NetBird's SSH server authenticates the *peer*, so a machine already
-in your mesh needs no key at all. Steps 3 and 4 of the setup simply do not apply.
+in your mesh needs no key at all. Steps 1, 3 and 4 of the setup (bootstrap, credential, `Connect-WinMeshHost`) simply do not apply.
 
 You still get objects back, not text. The scriptblock and its arguments are
 base64-packed into `powershell -EncodedCommand`, and the result is serialized on

@@ -62,9 +62,10 @@ git clone https://github.com/AndrewMoryakov/winmesh.git
 cd winmesh
 Import-Module .\winmesh.psd1
 
-New-WinMeshBootstrap -OutFile .\bootstrap.ps1     # скопируйте на цель и запустите там один раз от имени администратора
 Copy-Item .\config\hosts.example.psd1 .\config\hosts.psd1
-notepad .\config\hosts.psd1                       # добавьте свою машину (Address + Credential)
+notepad .\config\hosts.psd1                       # добавьте свою машину (Address + Credential) и задайте AllowedSubnets
+
+New-WinMeshBootstrap -OutFile .\bootstrap.ps1     # берёт AllowedSubnets из конфига; скопируйте на цель и запустите там один раз от имени администратора
 
 Register-WinMeshCredential -Id 'admin@workstation-01'   # логин — ровно так, как его напечатал bootstrap
 Connect-WinMeshHost -Name workstation-01                # настройка контроллера (админ, один раз)
@@ -73,7 +74,9 @@ Test-WinMeshHost    -Name workstation-01                # пять зелёны�
 Invoke-WinMeshCommand workstation-01 { hostname; whoami }
 ```
 
-Цели, доступные по SSH, пропускают шаги с учётными данными и `Connect-WinMeshHost` — см. [SSH вместо WinRM](#ssh-вместо-winrm).
+Создайте конфиг **до** генерации bootstrap-скрипта: `New-WinMeshBootstrap` берёт область файрвола из `AllowedSubnets` в `config\hosts.psd1`, а без конфига подставляет `100.64.0.0/10` (диапазон Tailscale/NetBird) — и контроллер в обычной LAN или ZeroTier окажется отрезан. Либо передайте `-AllowedSubnets` явно — см. [Выбор разрешённых подсетей](#выбор-разрешённых-подсетей).
+
+Цели, доступные по **SSH**, полностью пропускают bootstrap, учётные данные и `Connect-WinMeshHost` — изменения WinRM им не нужны. См. [SSH вместо WinRM](#ssh-вместо-winrm).
 
 ---
 
@@ -126,7 +129,9 @@ New-WinMeshBootstrap -OutFile .\bootstrap.ps1
 
 Запомните напечатанное значение **LoginForCred** — оно понадобится на шаге 3.
 
-> Если цель уже доступна по WinRM, пропустите этот шаг.
+> Bootstrap берёт `AllowedSubnets` из `config\hosts.psd1`. Если конфига ещё нет, он подставит `100.64.0.0/10` — сначала выполните шаг 2 или передайте `-AllowedSubnets` явно (см. [Выбор разрешённых подсетей](#выбор-разрешённых-подсетей)).
+>
+> Если цель уже доступна по WinRM или будет подключаться по SSH, пропустите этот шаг.
 
 ### Шаг 2 · Добавьте цель в конфиг (контроллер)
 
@@ -288,7 +293,7 @@ Invoke-WinMeshCommand workstation-02 { Get-Service } | Where-Object Status -eq '
 **Поля `Credential` нет, и шага `Connect-WinMeshHost` нет.** По ssh клиент
 аутентифицируется сам — ключом, агентом или, в оверлейной сети, идентичностью пира:
 SSH-сервер NetBird аутентифицирует *пира*, поэтому машине, уже входящей в вашу сеть,
-ключ вообще не нужен. Шаги 3 и 4 настройки к ней просто не относятся.
+ключ вообще не нужен. Шаги 1, 3 и 4 настройки (bootstrap, учётные данные, `Connect-WinMeshHost`) к ней просто не относятся.
 
 Объекты вы по-прежнему получаете, а не текст. Scriptblock и его аргументы упаковываются
 в base64 и передаются через `powershell -EncodedCommand`, а результат сериализуется на
