@@ -512,7 +512,7 @@ Point winmesh at a different config with `$env:WINMESH_CONFIG` or `-Config`/`-Pa
 - **Does not bypass the first admin step on a target.** That is impossible in principle; the module only generates the script.
 - **Does not move credentials between controllers.** A DPAPI file decrypts only where it was created. The store is local by design.
 - **Does not manage SSH keys or passwords.** Over ssh, authentication is whatever your `ssh` client already negotiates — a key, an agent, or an overlay network's peer identity. winmesh never prompts, stores, or forwards a secret for the ssh path.
-- **Does not install an SSH server for you.** Unlike WinRM there is no bootstrap for it: either the overlay VPN already provides one (NetBird does), or you install an OpenSSH server yourself, once (plus PowerShell 7 on a Linux/macOS target).
+- **The module does not install an SSH server.** Unlike WinRM there is no bootstrap for it: either the overlay VPN already provides one (NetBird does), or you install an OpenSSH server once (plus PowerShell 7 on a Linux/macOS target). For that one step there are optional standalone scripts for Windows and Linux — see [SSH server setup](docs/ssh-server-setup.md).
 
 ---
 
@@ -620,6 +620,8 @@ On a **non-English Windows**, or a domain-joined machine whose DC is unreachable
 ## Requirements
 
 Windows PowerShell 5.1 or PowerShell 7 on Windows; PowerShell 7 on Linux and macOS (see [Platforms](#platforms)). A network giving machines stable, mutually reachable addresses — overlay (Tailscale, NetBird, ZeroTier) or plain LAN. Administrator rights only for `Connect-WinMeshHost` on the controller and the bootstrap on each target — neither applies to ssh hosts. For the ssh transport, an `ssh` client on the controller (built into Windows 10/11, Server 2019+, Linux and macOS) and an SSH server on the target — plus PowerShell 7 there if the target is Linux or macOS.
+
+For repeatable target-side OpenSSH installation on Windows (Win32-OpenSSH) and Linux, see [SSH server setup](docs/ssh-server-setup.md). The scripts require the allowed source subnet explicitly, rather than opening TCP/22 to every address.
 
 ## Contributing
 

@@ -17,7 +17,7 @@ Out of scope (by design):
 - Anything that bypasses the one-time local admin step on a target — it cannot be done and we will not pretend otherwise.
 - Storing credentials anywhere but the local DPAPI store.
 - Handling secrets on the SSH path at all — no key generation, no passphrase prompts, no `sshpass`. Authentication over ssh is whatever the client already negotiates, and per-host detail belongs in `~/.ssh/config`, which we do not duplicate.
-- Installing an SSH server on a target. Either the overlay VPN provides one or the user installs OpenSSH Server once, by hand.
+- Installing an SSH server from the module itself. The optional standalone scripts under `scripts/` do that one job for a target (see `docs/ssh-server-setup.md`); keep them standalone, never called by a module function, and never opening TCP/22 wider than the ranges the user passes.
 
 If unsure whether something fits, open an issue before writing code.
 
