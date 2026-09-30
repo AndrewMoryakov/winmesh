@@ -36,6 +36,7 @@ function Invoke-WinMeshCommand {
             -ScriptBlock $ScriptBlock -ArgumentList $ArgumentList
     }
 
+    Assert-WinMeshWinRMController -What "Host '$Name' uses WinRM, which"
     $cred = Get-WinMeshCredential -Id $h.Credential -Store $Config.Defaults.CredentialStore
 
     $params = @{

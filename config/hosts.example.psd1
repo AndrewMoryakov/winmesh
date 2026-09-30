@@ -20,7 +20,7 @@
         # own, and on an overlay network it may need nothing at all.
         SshUser         = ''                            # remote account; empty = let ssh decide
         SshPort         = 22
-        SshShell        = 'powershell'                  # 'powershell' (5.1) or 'pwsh'
+        SshShell        = 'powershell'                  # 'powershell' (5.1) or 'pwsh'; Linux/macOS targets need 'pwsh'
         SshTimeout      = 15                            # seconds (ConnectTimeout)
         SshOptions      = @()                           # extra -o options, e.g. @('StrictHostKeyChecking=accept-new')
     }
@@ -51,6 +51,14 @@
         #     Transport = 'ssh'
         #     SshUser   = 'Administrator'
         #     Note      = 'reached over NetBird; auth is by peer identity'
+        # }
+
+        # A Linux or macOS machine: ssh only, with PowerShell 7 installed there.
+        # 'linux-01' = @{
+        #     Address   = '100.100.10.21'
+        #     Transport = 'ssh'
+        #     SshUser   = 'admin'
+        #     SshShell  = 'pwsh'                          # or a full path, e.g. '/usr/local/bin/pwsh'
         # }
     }
 }
