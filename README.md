@@ -1,16 +1,82 @@
-# winmesh
+<p align="center">
+  <img src="docs/assets/winmesh-hero.png" alt="winmesh: a dispatcher at a desk with an address book sends couriers to Windows machines, each reached by name" width="100%">
+</p>
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-informational.svg)](LICENSE)
-[![PowerShell 5.1+ | 7](https://img.shields.io/badge/PowerShell-5.1%2B%20%7C%207-5391FE.svg?logo=powershell&logoColor=white)](https://learn.microsoft.com/powershell/)
-[![Platform: Windows](https://img.shields.io/badge/Platform-Windows-0078D6.svg?logo=windows&logoColor=white)](https://github.com/AndrewMoryakov/winmesh)
-[![Transport: WinRM | SSH](https://img.shields.io/badge/Transport-WinRM%20%7C%20SSH-2E7D57.svg)](https://learn.microsoft.com/windows/win32/winrm/portal)
-[![Version](https://img.shields.io/badge/version-0.2.1-blue.svg)](winmesh.psd1)
+<h1 align="center">winmesh</h1>
 
-A thin layer for linking Windows machines over PowerShell Remoting **or SSH**. Name a host, run commands on it. Windows only.
+<p align="center"><b>Name a Windows machine, run PowerShell on it — over WinRM or SSH, on any network. For admins and devs with a handful of Windows boxes.</b></p>
 
-**Not tied to any specific network.** Machines only need stable, mutually reachable addresses — provided by an overlay network (**Tailscale, NetBird, ZeroTier**), a plain **LAN**, or anything else. winmesh is about the addresses and WinRM, not how you obtain them.
+<p align="center">
+  <a href="LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/License-MIT-informational.svg"></a>
+  <a href="https://learn.microsoft.com/powershell/"><img alt="PowerShell 5.1+ | 7" src="https://img.shields.io/badge/PowerShell-5.1%2B%20%7C%207-5391FE.svg?logo=powershell&logoColor=white"></a>
+  <a href="https://github.com/AndrewMoryakov/winmesh"><img alt="Platform: Windows" src="https://img.shields.io/badge/Platform-Windows-0078D6.svg?logo=windows&logoColor=white"></a>
+  <a href="https://learn.microsoft.com/windows/win32/winrm/portal"><img alt="Transport: WinRM | SSH" src="https://img.shields.io/badge/Transport-WinRM%20%7C%20SSH-2E7D57.svg"></a>
+  <a href="winmesh.psd1"><img alt="Version" src="https://img.shields.io/badge/version-0.2.1-blue.svg"></a>
+</p>
 
-This is not a new protocol. Under the hood it is stock WinRM and `Invoke-Command`, or stock `ssh` — you pick per host with one config field. The value is the opinionated bundle: name-based addressing from a config file, a firewall narrowed to trusted subnets, a local credential store, one-command channel checks, and a set of gotchas you would otherwise learn the hard way. Aimed at a handful of machines, where Ansible is overkill.
+<p align="center"><b>English</b> | <a href="README.ru.md">Русский</a></p>
+
+```powershell
+Invoke-WinMeshCommand workstation-01 { hostname; whoami }     # run a command on a host, by name
+Test-WinMeshFleet                                             # check every host in the config at once
+```
+
+winmesh is a thin layer for linking Windows machines over PowerShell Remoting **or SSH**. Name a host, run commands on it, get real objects back. Windows only.
+
+## Why winmesh?
+
+- **If** you have a few Windows machines (workstations, a NAS, lab boxes) and want to run PowerShell on them by name, **then** winmesh gives you `Invoke-WinMeshCommand <name> { ... }` after a one-time setup per machine.
+- **If** Ansible feels like overkill for a handful of machines, **then** winmesh is deliberately small: one config file, stock WinRM or `ssh`, no agents, no extra dependencies.
+- **If** your machines are linked by Tailscale, NetBird, ZeroTier or a plain LAN, **then** it works the same — winmesh only needs stable, mutually reachable addresses, not any particular network. **Not tied to any specific network.**
+- **If** you would rather not learn the WinRM, firewall and SSH-quoting pitfalls the hard way, **then** the [gotchas](#gotchas-baked-in) are already baked in.
+
+This is not a new protocol. Under the hood it is stock WinRM and `Invoke-Command`, or stock `ssh` — you pick per host with one config field. The value is the opinionated bundle described below. It is **not** for large fleets or configuration management — see [what it deliberately does not do](#what-it-deliberately-does-not-do).
+
+## Features
+
+- **Name-based addressing** — hosts live in one `config/hosts.psd1`; you type `workstation-01`, not an IP.
+- **Two transports, one interface** — `winrm` (default) or `ssh`, chosen per host. Same names, same commands, same object results.
+- **Real objects, not text** — pipe results like any PowerShell output, over either transport.
+- **Firewall narrowed to trusted subnets** — the bootstrap restricts the WinRM port to `AllowedSubnets`; view or re-apply it later with `Get-`/`Set-WinMeshFirewallScope`.
+- **Local credential store** — per-target credentials encrypted with DPAPI, never in git (WinRM).
+- **One-command channel checks** — `Test-WinMeshHost` and `Test-WinMeshFleet`.
+- **Gotchas baked in** — lessons from real debugging, built into the scripts and [written down](#gotchas-baked-in).
+
+## How it works
+
+<p align="center">
+  <img src="docs/assets/winmesh-how-it-works.png" alt="winmesh: a controller looks up a host name in the config and reaches the machine over WinRM or SSH" width="100%">
+</p>
+
+1. **Name your machines.** List each target — a short name, an address, a credential id — in `config/hosts.psd1`.
+2. **Prepare once.** Run the generated bootstrap script on each target (enables WinRM, narrows the firewall), and `Connect-WinMeshHost` on the controller.
+3. **Run by name.** `Invoke-WinMeshCommand <name> { ... }` picks the host's transport — `winrm` or `ssh` — and runs your scriptblock there.
+4. **Get objects back.** Results come back as PowerShell objects you can pipe on.
+
+## Quick start
+
+From a clone of this repo on the **controller** (your laptop). Admin rights are needed only for the bootstrap on the target and for `Connect-WinMeshHost`. Each step is explained in [Setup — step by step](#setup--step-by-step).
+
+```powershell
+git clone https://github.com/AndrewMoryakov/winmesh.git
+cd winmesh
+Import-Module .\winmesh.psd1
+
+Copy-Item .\config\hosts.example.psd1 .\config\hosts.psd1
+notepad .\config\hosts.psd1                       # add your machine (Address + Credential) and set AllowedSubnets
+
+New-WinMeshBootstrap -OutFile .\bootstrap.ps1     # takes AllowedSubnets from the config; copy to the target, run there once as Administrator
+
+Register-WinMeshCredential -Id 'admin@workstation-01'   # login exactly as the bootstrap printed it
+Connect-WinMeshHost -Name workstation-01                # controller-side setup (admin, once)
+Test-WinMeshHost    -Name workstation-01                # five green checks = success
+
+Invoke-WinMeshCommand workstation-01 { hostname; whoami }
+```
+
+Create the config **before** generating the bootstrap: `New-WinMeshBootstrap` takes the firewall scope from `AllowedSubnets` in `config\hosts.psd1`, and without a config it falls back to `100.64.0.0/10` (the Tailscale/NetBird range) — a controller on a plain LAN or ZeroTier would then be locked out. Or pass `-AllowedSubnets` explicitly — see [Choosing allowed subnets](#choosing-allowed-subnets).
+
+Targets reached over **SSH** skip the bootstrap, the credential and the `Connect-WinMeshHost` steps entirely — they need none of the WinRM changes. See [Over SSH instead of WinRM](#over-ssh-instead-of-winrm).
 
 ---
 
@@ -63,7 +129,9 @@ Copy `bootstrap.ps1` to the target (RDP, USB stick, or GPO in a domain) and run 
 
 Note the printed **LoginForCred** value — you will use it in Step 3.
 
-> If the target is already reachable by WinRM, skip this step.
+> The bootstrap takes `AllowedSubnets` from `config\hosts.psd1`. If the config does not exist yet, it falls back to `100.64.0.0/10` — do Step 2 first, or pass `-AllowedSubnets` explicitly (see [Choosing allowed subnets](#choosing-allowed-subnets)).
+>
+> If the target is already reachable by WinRM, or will be reached over SSH, skip this step.
 
 ### Step 2 · Add the target to your config (controller)
 
@@ -226,7 +294,7 @@ Invoke-WinMeshCommand workstation-02 { Get-Service } | Where-Object Status -eq '
 **There is no `Credential` field and no `Connect-WinMeshHost` step.** Over ssh the
 client authenticates on its own — a key, an agent, or, on an overlay network, the
 peer identity: NetBird's SSH server authenticates the *peer*, so a machine already
-in your mesh needs no key at all. Steps 3 and 4 of the setup simply do not apply.
+in your mesh needs no key at all. Steps 1, 3 and 4 of the setup (bootstrap, credential, `Connect-WinMeshHost`) simply do not apply.
 
 You still get objects back, not text. The scriptblock and its arguments are
 base64-packed into `powershell -EncodedCommand`, and the result is serialized on
