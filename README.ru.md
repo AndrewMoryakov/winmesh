@@ -4,12 +4,12 @@
 
 <h1 align="center">winmesh</h1>
 
-<p align="center"><b>Назовите Windows-машину — и запускайте на ней PowerShell по WinRM или SSH, в любой сети. Для админов и разработчиков, у которых несколько Windows-компьютеров.</b></p>
+<p align="center"><b>Назовите машину — и запускайте на ней PowerShell по WinRM или SSH, в любой сети. Для админов и разработчиков, у которых несколько Windows-компьютеров — и Linux- и macOS-машины рядом с ними.</b></p>
 
 <p align="center">
   <a href="LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/License-MIT-informational.svg"></a>
   <a href="https://learn.microsoft.com/powershell/"><img alt="PowerShell 5.1+ | 7" src="https://img.shields.io/badge/PowerShell-5.1%2B%20%7C%207-5391FE.svg?logo=powershell&logoColor=white"></a>
-  <a href="https://github.com/AndrewMoryakov/winmesh"><img alt="Platform: Windows" src="https://img.shields.io/badge/Platform-Windows-0078D6.svg?logo=windows&logoColor=white"></a>
+  <a href="#платформы"><img alt="Platform: Windows | Linux | macOS" src="https://img.shields.io/badge/Platform-Windows%20%7C%20Linux%20%7C%20macOS-0078D6.svg"></a>
   <a href="https://learn.microsoft.com/windows/win32/winrm/portal"><img alt="Transport: WinRM | SSH" src="https://img.shields.io/badge/Transport-WinRM%20%7C%20SSH-2E7D57.svg"></a>
   <a href="winmesh.psd1"><img alt="Version" src="https://img.shields.io/badge/version-0.2.1-blue.svg"></a>
 </p>
@@ -21,7 +21,7 @@ Invoke-WinMeshCommand workstation-01 { hostname; whoami }     # выполнит
 Test-WinMeshFleet                                             # проверить сразу все хосты из конфига
 ```
 
-winmesh — тонкий слой для связи Windows-машин по PowerShell Remoting **или SSH**. Назовите хост, запустите на нём команду, получите обратно настоящие объекты. Только Windows.
+winmesh — тонкий слой для связи Windows-машин по PowerShell Remoting **или SSH**. Назовите хост, запустите на нём команду, получите обратно настоящие объекты. Контроллер и цели могут быть на Windows, Linux или macOS: WinRM — между Windows-машинами, SSH — везде; см. [Платформы](#платформы).
 
 ## Зачем нужен winmesh?
 
@@ -83,7 +83,7 @@ Invoke-WinMeshCommand workstation-01 { hostname; whoami }
 ## Концепции за 30 секунд
 
 - **Контроллер** — машина, с которой вы запускаете winmesh (ваш ноутбук). Здесь лежат конфиг и хранилище учётных данных.
-- **Цель** — машина, до которой нужно достучаться. На ней работает WinRM-listener.
+- **Цель** — машина, до которой нужно достучаться. На ней работает WinRM-listener или SSH-сервер.
 - **Конфиг** (`config/hosts.psd1`) — список целей: короткое имя, адрес, id учётных данных.
 - **Хранилище учётных данных** — зашифрованные учётки для каждой цели, хранятся локально (никогда не в git). Только для WinRM.
 - **Транспорт** — `winrm` (по умолчанию) или `ssh`, задаётся для каждого хоста. Всё поверх транспорта одинаково: те же имена, те же команды, те же объекты в ответе.
@@ -94,9 +94,63 @@ Invoke-WinMeshCommand workstation-01 { hostname; whoami }
 
 ## Требования для старта
 
-- Windows PowerShell 5.1 **или** PowerShell 7 — и на контроллере, и на целях.
+- Windows PowerShell 5.1 **или** PowerShell 7 на Windows-машинах; PowerShell 7 (`pwsh`) на Linux и macOS — и на контроллере, и на целях. См. [Платформы](#платформы).
 - Сеть, дающая машинам стабильные, взаимно достижимые адреса (Tailscale / NetBird / ZeroTier / LAN).
 - Права администратора нужны ровно для двух шагов: `Connect-WinMeshHost` на контроллере и bootstrap-скрипт на каждой цели.
+
+---
+
+## Платформы
+
+ssh-транспорт работает в любом направлении; WinRM требует Windows на обоих концах.
+
+| Контроллер ↓ · Цель → | Windows | Linux / macOS |
+|---|---|---|
+| **Windows** (PowerShell 5.1 или 7) | `winrm` или `ssh` | `ssh` |
+| **Linux / macOS** (PowerShell 7) | `ssh` | `ssh` |
+
+**Почему WinRM остаётся Windows-к-Windows.** У PowerShell 7 на Linux/macOS нет
+поддерживаемого WinRM-клиента (`Invoke-Command -ComputerName`, `Test-WSMan` и диск
+`WSMan:` отсутствуют или зависят от заброшенного стека PSWSMan/OMI), а хранилище
+учётных данных — это DPAPI, который есть только в Windows: вне Windows
+`Export-Clixml` записывает пароль простым hex. Поэтому на Linux/macOS-контроллере
+`Register-WinMeshCredential`, `Connect-WinMeshHost`, `Invoke-WinMeshCommand` и
+команды области файрвола отказываются работать с WinRM-хостом с понятным
+сообщением, а `Test-WinMeshHost` / `Test-WinMeshFleet` показывают его как
+проваленную проверку `WinRM client`, не прерываясь, — ssh-хосты смешанного парка
+всё равно проверяются.
+
+**Контроллер на Linux или macOS.** Установите [PowerShell 7](https://learn.microsoft.com/powershell/scripting/install/installing-powershell)
+и пользуйтесь модулем так же, как в Windows. Путь к конфигу, `$env:WINMESH_CONFIG`
+и `~/.ssh/config` работают как обычно; `CredentialStore` принимает любой разделитель.
+
+```bash
+git clone https://github.com/AndrewMoryakov/winmesh.git
+cd winmesh
+cp config/hosts.example.psd1 config/hosts.psd1     # хосты с Transport = 'ssh'
+pwsh -c 'Import-Module ./winmesh.psd1; Test-WinMeshFleet'
+```
+
+**Цель на Linux или macOS.** Нужны SSH-сервер и PowerShell 7 — scriptblock
+выполняется там в `pwsh`, и результаты по-прежнему приходят объектами. Задайте
+хосту `SshShell = 'pwsh'`: значение по умолчанию `powershell` есть только в Windows.
+
+```powershell
+'linux-01' = @{
+    Address   = '100.100.10.21'
+    Transport = 'ssh'
+    SshUser   = 'admin'
+    SshShell  = 'pwsh'          # или полный путь, если PATH ssh-сессии его не видит
+}
+```
+
+- **Linux:** установите `openssh-server` и [PowerShell 7](https://learn.microsoft.com/powershell/scripting/install/installing-powershell-on-linux) из пакетов дистрибутива или Microsoft.
+- **macOS:** включите *Удалённый вход* (Системные настройки → Основные → Общий доступ, или `sudo systemsetup -setremotelogin on`) и установите [PowerShell 7](https://learn.microsoft.com/powershell/scripting/install/installing-powershell-on-macos).
+- Неинтерактивная ssh-команда не читает login-профили, поэтому её `PATH` может отличаться от вашего терминала. Если winmesh сообщает, что PowerShell не найден, укажите в `SshShell` полный путь, который печатает `command -v pwsh` на цели.
+
+У Linux/macOS-цели в `Test-WinMeshHost` нет проверки *full admin token*: обычный
+вход там — это норма, а root получают через `sudo`. Строка *command runs* говорит,
+что именно, — например, `linux-01 / admin (Linux), not root`.
 
 ---
 
@@ -296,7 +350,7 @@ SSH-сервер NetBird аутентифицирует *пира*, поэтом
 ключ вообще не нужен. Шаги 1, 3 и 4 настройки (bootstrap, учётные данные, `Connect-WinMeshHost`) к ней просто не относятся.
 
 Объекты вы по-прежнему получаете, а не текст. Scriptblock и его аргументы упаковываются
-в base64 и передаются через `powershell -EncodedCommand`, а результат сериализуется на
+в base64 и передаются через `powershell -EncodedCommand` (`pwsh` на Linux/macOS), а результат сериализуется на
 удалённой стороне тем же движком CliXml, что использует remoting, и здесь восстанавливается.
 
 **Опции SSH** — для хоста или в `Defaults`:
@@ -305,7 +359,7 @@ SSH-сервер NetBird аутентифицирует *пира*, поэтом
 |---|---|---|
 | `SshUser` | *(пусто)* | удалённая учётная запись; пусто — пусть решает `ssh` |
 | `SshPort` | `22` | |
-| `SshShell` | `powershell` | `powershell` (5.1, есть всегда) или `pwsh` |
+| `SshShell` | `powershell` | `powershell` (5.1, в Windows есть всегда) или `pwsh`; Linux/macOS-целям нужен `pwsh` или полный путь к нему |
 | `SshTimeout` | `15` | секунды, превращается в `ConnectTimeout` |
 | `SshOptions` | `@()` | дополнительные опции `-o`, например `@('StrictHostKeyChecking=accept-new')` |
 
@@ -416,8 +470,8 @@ Hosts = @{
 | Команда | Что делает | Где выполняется | Админ |
 |---|---|---|---|
 | `Get-WinMeshConfig` | загрузить и проверить конфиг | контроллер | нет |
-| `Register-WinMeshCredential` | сохранить учётные данные цели (DPAPI) — *только winrm* | контроллер | нет |
-| `Connect-WinMeshHost` | настроить клиент: WinRM + TrustedHosts — *только winrm* | контроллер | **да** |
+| `Register-WinMeshCredential` | сохранить учётные данные цели (DPAPI) — *только winrm, Windows-контроллер* | контроллер | нет |
+| `Connect-WinMeshHost` | настроить клиент: WinRM + TrustedHosts — *только winrm, Windows-контроллер* | контроллер | **да** |
 | `Test-WinMeshHost` / `Test-WinMeshFleet` | проверить канал | контроллер | нет |
 | `Invoke-WinMeshCommand` | выполнить команду на хосте | контроллер | нет |
 | `New-WinMeshBootstrap` | сгенерировать скрипт подготовки цели | контроллер | нет |
@@ -460,7 +514,7 @@ Hosts = @{
 - **Не обходит первый админ-шаг на цели.** В принципе невозможно; модуль лишь генерирует скрипт.
 - **Не переносит учётные данные между контроллерами.** Файл DPAPI расшифровывается только там, где создан. Хранилище локально намеренно.
 - **Не управляет SSH-ключами и паролями.** По ssh аутентификация — это то, о чём договорится ваш `ssh`-клиент: ключ, агент или идентичность пира оверлейной сети. winmesh для ssh-пути никогда не запрашивает, не хранит и не пересылает секреты.
-- **Не устанавливает SSH-сервер за вас.** В отличие от WinRM, bootstrap для него нет: либо оверлейная VPN уже предоставляет сервер (NetBird), либо вы один раз сами ставите Windows OpenSSH Server.
+- **Не устанавливает SSH-сервер за вас.** В отличие от WinRM, bootstrap для него нет: либо оверлейная VPN уже предоставляет сервер (NetBird), либо вы один раз сами ставите OpenSSH-сервер (а на Linux/macOS-цель — ещё и PowerShell 7).
 
 ---
 
@@ -528,6 +582,20 @@ Hosts = @{
   корректно на английской машине, и ни один не ловится прогоном тестов под Linux.
   Фиксируйте локаль (`toLocaleString('en-US')`) и обращайтесь к принципалам по SID.
 
+### Linux и macOS
+
+- **`$IsWindows` не существует в Windows PowerShell 5.1.** Там он равен `$null`,
+  и `if ($IsWindows)` молча считает любую машину с 5.1 не-Windows. Scriptblock,
+  который может выполниться на цели с 5.1, проверяет `$env:OS -eq 'Windows_NT'`.
+- **`WindowsIdentity` вне Windows бросает исключение.** Проверка админа, работающая
+  на любой Windows-цели, на Linux/macOS даёт `PlatformNotSupportedException`; там
+  вопрос решает `id -u` — и «не root» это норма, а не сбой.
+- **Обратный слэш в Linux/macOS — обычный символ имени файла.** `Join-Path $dir 'config\hosts.psd1'`
+  даёт один файл с именем `config\hosts.psd1`. Соединяйте сегменты по отдельности.
+- **Вне Windows `Export-Clixml` не шифрует учётные данные.** Пароль хранится как
+  hex от UTF-16 — его прочитает любой, кто может прочитать файл. Поэтому хранилище
+  учётных данных (а с ним и WinRM) — только для Windows.
+
 ### Управление целью из скрипта
 
 - **Не встраивайте не-ASCII литералы в передаваемый скрипт.** `.ps1` с кириллицей
@@ -552,7 +620,7 @@ Hosts = @{
 
 ## Требования
 
-Windows PowerShell 5.1 или PowerShell 7. Сеть, дающая машинам стабильные, взаимно достижимые адреса — оверлей (Tailscale, NetBird, ZeroTier) или обычная LAN. Права администратора нужны только для `Connect-WinMeshHost` на контроллере и bootstrap на каждой цели — к ssh-хостам ни то ни другое не относится. Для ssh-транспорта нужны `ssh`-клиент на контроллере (встроен в Windows 10/11 и Server 2019+) и SSH-сервер на цели.
+Windows PowerShell 5.1 или PowerShell 7 в Windows; PowerShell 7 в Linux и macOS (см. [Платформы](#платформы)). Сеть, дающая машинам стабильные, взаимно достижимые адреса — оверлей (Tailscale, NetBird, ZeroTier) или обычная LAN. Права администратора нужны только для `Connect-WinMeshHost` на контроллере и bootstrap на каждой цели — к ssh-хостам ни то ни другое не относится. Для ssh-транспорта нужны `ssh`-клиент на контроллере (встроен в Windows 10/11, Server 2019+, Linux и macOS) и SSH-сервер на цели — а если цель на Linux или macOS, то и PowerShell 7 на ней.
 
 ## Участие в разработке
 

@@ -1,6 +1,6 @@
 ﻿# winmesh — module loader.
 # Each function lives in its own file under functions/ and is dot-sourced here.
-# Works in both Windows PowerShell 5.1 and PowerShell 7.
+# Works in both Windows PowerShell 5.1 and PowerShell 7, on Windows, Linux and macOS.
 
 $ErrorActionPreference = 'Stop'
 
