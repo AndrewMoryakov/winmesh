@@ -1,7 +1,9 @@
 ﻿#Requires -RunAsAdministrator
 [CmdletBinding()]
 param(
-    # Exact GitHub release tag. Do not use an implicit 'latest' release.
+    # Exact GitHub release tag, as shown on the releases page. Do not use an
+    # implicit 'latest' release. Note the prefix varies: '10.0.0.0p2-Preview'
+    # has none, older tags such as 'v9.8.3.0p2-Preview' start with 'v'.
     [Parameter(Mandatory)]
     [string]$Version,
 
@@ -95,6 +97,23 @@ else {
         -RemoteAddress $AllowedRemoteAddress | Out-Null
 }
 
+# Allow rules add up: any other enabled inbound allow rule for TCP/22 - such as
+# the stock OpenSSH-Server-In-TCP with RemoteAddress Any - would keep the port
+# open to everyone next to winmesh-sshd. Disable them (reversible with
+# Enable-NetFirewallRule) rather than delete. Rules pushed by Group Policy are
+# not in the local store and cannot be changed here; review those separately.
+$otherSshRules = @(Get-NetFirewallPortFilter -All |
+    Where-Object { $_.Protocol -eq 'TCP' -and @($_.LocalPort) -contains '22' } |
+    Get-NetFirewallRule |
+    Where-Object {
+        $_.Name -ne $ruleName -and $_.Enabled -eq 'True' -and
+        $_.Direction -eq 'Inbound' -and $_.Action -eq 'Allow'
+    })
+foreach ($rule in $otherSshRules) {
+    Disable-NetFirewallRule -Name $rule.Name
+    Write-Host "Disabled the broader firewall rule for TCP/22: $($rule.Name) ($($rule.DisplayName))"
+}
+
 $service = Get-Service -Name sshd
 if ($service.Status -ne 'Running') { Start-Service -Name sshd }
 
@@ -107,5 +126,6 @@ $serviceConfig = Get-CimInstance Win32_Service -Filter "Name='sshd'"
     SshdStatus          = (Get-Service -Name sshd).Status
     StartupType         = $serviceConfig.StartMode
     AllowedRemoteAddress = $AllowedRemoteAddress -join ', '
+    DisabledRules       = ($otherSshRules | ForEach-Object Name) -join ', '
     Port22Listening     = $isListening
 }
