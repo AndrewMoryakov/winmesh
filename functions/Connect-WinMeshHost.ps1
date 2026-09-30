@@ -26,6 +26,11 @@ function Connect-WinMeshHost {
     if (-not $Config) { $Config = Get-WinMeshConfig }
     $h = $Config.Hosts[$Name]
     if (-not $h) { throw "Host '$Name' is not in config $($Config.Path)." }
+    if ($h.Transport -eq 'ssh') {
+        Write-Host "Host '$Name' uses ssh — there is no client-side WinRM setup to do." -ForegroundColor DarkGray
+        return
+    }
+    Assert-WinMeshWinRMController -What 'Connect-WinMeshHost'
 
     Write-Host "`n=== Preparing client for '$Name' ($($h.Address)) ===" -ForegroundColor Cyan
 

@@ -20,10 +20,12 @@ function Get-WinMeshConfig {
         $Path = $env:WINMESH_CONFIG
     }
     if (-not $Path) {
-        $Path = Join-Path (Split-Path $PSScriptRoot -Parent) 'config\hosts.psd1'
+        # Two Join-Path calls, not 'config\hosts.psd1': on Linux/macOS a backslash
+        # is an ordinary file-name character, not a separator.
+        $Path = Join-Path (Join-Path (Split-Path $PSScriptRoot -Parent) 'config') 'hosts.psd1'
     }
     if (-not (Test-Path -LiteralPath $Path)) {
-        throw "Config not found: $Path. Copy config\hosts.example.psd1 to config\hosts.psd1 and fill in your machines."
+        throw "Config not found: $Path. Copy config/hosts.example.psd1 to config/hosts.psd1 and fill in your machines."
     }
 
     $cfg = Import-PowerShellDataFile -LiteralPath $Path
@@ -40,7 +42,7 @@ function Get-WinMeshConfig {
 
     $defaults = @{
         Transport       = 'winrm'
-        CredentialStore = (Join-Path $home_ '.winmesh\creds')
+        CredentialStore = (Join-Path (Join-Path $home_ '.winmesh') 'creds')
         # Subnets allowed to reach the WinRM port (firewall narrowing in the bootstrap).
         # Default is the CGNAT range 100.64.0.0/10, used by both Tailscale and
         # NetBird. For ZeroTier, a plain LAN, or your own addressing, set your own
@@ -50,7 +52,8 @@ function Get-WinMeshConfig {
         # --- ssh transport (Transport = 'ssh') ---
         SshUser     = ''                # remote account; empty = let ssh decide (config/agent/current user)
         SshPort     = 22
-        SshShell    = 'powershell'      # 'powershell' (5.1, always present) or 'pwsh'
+        SshShell    = 'powershell'      # 'powershell' (5.1, always present on Windows) or 'pwsh';
+                                        # Linux/macOS targets need 'pwsh' or its full path
         SshTimeout  = 15                # seconds, passed as ConnectTimeout
         SshOptions  = @()               # extra -o options, e.g. @('StrictHostKeyChecking=accept-new')
     }
@@ -63,8 +66,12 @@ function Get-WinMeshConfig {
     }
     $defaults.AllowedSubnets = @($defaults.AllowedSubnets)
 
-    # expand ~ in the store path
-    $defaults.CredentialStore = $defaults.CredentialStore -replace '^~', $home_
+    # expand ~ in the store path, and accept either separator so one config file
+    # ('~\.winmesh\creds' or '~/.winmesh/creds') means the same on every OS.
+    $store = $defaults.CredentialStore
+    if ($store.StartsWith('~')) { $store = $home_ + $store.Substring(1) }
+    $sep = "$([IO.Path]::DirectorySeparatorChar)"
+    $defaults.CredentialStore = $store.Replace('\', $sep).Replace('/', $sep)
 
     # validate each host
     foreach ($name in $cfg.Hosts.Keys) {

@@ -23,6 +23,10 @@ function Register-WinMeshCredential {
         [string]$Store
     )
 
+    # Off Windows there is no DPAPI: Export-Clixml would store the password as
+    # plain hex while this function claims it is encrypted. Refuse instead.
+    Assert-WinMeshWinRMController -What 'The credential store'
+
     if (-not $Store) {
         $cfg = Get-WinMeshConfig
         $Store = $cfg.Defaults.CredentialStore

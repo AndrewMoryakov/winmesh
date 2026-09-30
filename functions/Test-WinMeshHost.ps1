@@ -10,7 +10,9 @@
       * a command actually runs, and the privilege level.
 
     Which checks apply depends on the host's Transport. Over ssh there is no
-    credential step: the ssh client authenticates on its own.
+    credential step: the ssh client authenticates on its own. A Linux/macOS
+    target is not required to log in as root, so it gets no admin check — the
+    'command runs' detail says whether the session is root.
 .PARAMETER Quiet
     Do not print; return the object only.
 .EXAMPLE
@@ -41,22 +43,44 @@ function Test-WinMeshHost {
         $probe = Test-WinMeshSshPort -Address $h.Address -Port $port
         Add-Check "ssh port $port" $probe.Ok $probe.Detail
 
-        # 2. a command actually runs, and at what privilege level
+        # 2. a command actually runs, and at what privilege level.
+        #    The target may be Windows (5.1 or 7), Linux or macOS (pwsh). The block
+        #    runs there, so it must parse under 5.1 and must not touch
+        #    WindowsIdentity off Windows — it throws PlatformNotSupported.
+        #    $IsWindows is useless for the test: it is $null under 5.1.
         if ($probe.Ok) {
             try {
                 $r = Invoke-WinMeshSsh -HostEntry $h -Defaults $Config.Defaults -ScriptBlock {
+                    $win = $env:OS -eq 'Windows_NT'
                     [PSCustomObject]@{
-                        Host  = $env:COMPUTERNAME
+                        Host  = [Environment]::MachineName
                         User  = whoami
-                        Admin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+                        Os    = if ($win) { 'Windows' } elseif ($IsMacOS) { 'macOS' } else { 'Linux' }
+                        Admin = if ($win) {
+                            ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+                        } else { "$(id -u)" -eq '0' }
                     }
                 }
-                Add-Check 'command runs' $true "$($r.Host) / $($r.User)"
-                Add-Check 'full admin token' $r.Admin $(if ($r.Admin) { 'yes' } else { 'reduced (elevate the remote account)' })
+                $who = "$($r.Host) / $($r.User) ($($r.Os))"
+                if ($r.Os -eq 'Windows') {
+                    Add-Check 'command runs' $true $who
+                    Add-Check 'full admin token' $r.Admin $(if ($r.Admin) { 'yes' } else { 'reduced (elevate the remote account)' })
+                } else {
+                    # An ordinary login on Linux/macOS is healthy, not a failure: root
+                    # is reached through sudo. So no admin check — just say what the
+                    # session is.
+                    Add-Check 'command runs' $true "$who, $(if ($r.Admin) { 'root' } else { 'not root' })"
+                }
             } catch {
                 Add-Check 'command runs' $false (($_.Exception.Message -split "`n")[0])
             }
         }
+    }
+    elseif (-not (Test-WinMeshWindows)) {
+        # Test-NetConnection and Test-WSMan do not exist on Linux/macOS. Report it
+        # as a failed check rather than throwing, so Test-WinMeshFleet still covers
+        # the ssh hosts of a mixed fleet.
+        Add-Check 'WinRM client' $false "not available on a Linux/macOS controller — use Transport = 'ssh' for this host"
     }
     else {
         # 1. port

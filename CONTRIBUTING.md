@@ -35,7 +35,9 @@ There are no build steps and no packages to install. The module is plain `.ps1`/
 
 These are not style preferences — each one prevents a bug we have already hit:
 
-- **Support both Windows PowerShell 5.1 and PowerShell 7.** Test in both. They differ in real ways (default encodings, `-match` on arrays, `ConfirmImpact` behavior).
+- **Support both Windows PowerShell 5.1 and PowerShell 7.** Test in both. They differ in real ways (default encodings, `-match` on arrays, `ConfirmImpact` behavior, `-replace` with a scriptblock — 7 only).
+- **Support Linux and macOS for everything but WinRM.** The ssh transport, the config and the checks must work from a `pwsh` controller on Linux/macOS and against a `pwsh` target there. WinRM-only commands call `Assert-WinMeshWinRMController` instead of failing deep inside a missing cmdlet. Test the platform with `$env:OS -eq 'Windows_NT'` (`Test-WinMeshWindows`), never `$IsWindows` — it is `$null` under 5.1. Build paths with one `Join-Path` per segment: a backslash is a file-name character off Windows.
+- **Wrap an `if` that yields a list in `@()`.** `$x = if (...) { @($a) }` unrolls the output, so a one-element list becomes a bare value. This once turned every single ssh argument into its first character.
 - **Save every `.ps1`/`.psd1` as UTF-8 *with BOM*.** Without the BOM, Windows PowerShell 5.1 reads non-ASCII as ANSI and fails to parse the file.
 - **No external dependencies.** Standard cmdlets only. The config is `.psd1`, not YAML, precisely because 5.1 has no YAML parser.
 - **Destructive commands use `SupportsShouldProcess` and honor `-WhatIf`.** Do *not* set `ConfirmImpact = 'High'` on anything meant to run via `Invoke-Command` — under a non-interactive host `ShouldProcess` throws instead of prompting.
@@ -49,6 +51,7 @@ Specific to the SSH transport (`functions/Invoke-WinMeshSsh.ps1`):
 - **`-EncodedCommand` takes base64 of UTF-16LE.** Use `[Text.Encoding]::Unicode`, not `::UTF8`; the UTF-8 version parses as garbage or not at all.
 - **Use `[System.Management.Automation.PSSerializer]` for the object round-trip.** `ConvertTo-CliXml` / `ConvertFrom-CliXml` do not exist in Windows PowerShell 5.1. Keeping this serialization is what makes ssh hosts return objects rather than text — do not "simplify" it into string output.
 - **Keep the ssh path free of Windows-only cmdlets.** `Test-NetConnection` is why the port probe uses `System.Net.Sockets.TcpClient` instead. A controller-side ssh call should not fail for reasons unrelated to the target.
+- **A scriptblock the module sends to a target must run on any of them** — Windows PowerShell 5.1, and `pwsh` on Windows, Linux or macOS. No `WindowsIdentity`, `$env:COMPUTERNAME` or `$IsWindows` without a platform branch; `[Environment]::MachineName` and `whoami` work everywhere.
 - **A native command writing to stderr must not become a terminating error.** `ssh` uses stderr for ordinary notices; set `$ErrorActionPreference = 'Continue'` around the call and read `$LASTEXITCODE`.
 
 ## Testing
@@ -72,12 +75,31 @@ Test-ModuleManifest .\winmesh.psd1
 #    Test-WinMeshHost -Name <yourhost>   -> all green
 ```
 
+Run steps 1 and 2 under `pwsh` on Linux or macOS as well (WSL is enough): the
+module must import there silently, and `Get-WinMeshConfig` must load a config.
+
+The ssh round-trip can be exercised without a second machine or an sshd: shadow
+`ssh` with a function that hands the remote command to the shell a real target
+would use. The module's `& ssh` resolves to it, so the real payload, the real
+word-splitting and the real result parser all run:
+
+```powershell
+function global:ssh { $ErrorActionPreference = 'Continue'; bash -c $args[-1] }   # Linux/macOS "target"
+function global:ssh { $ErrorActionPreference = 'Continue'; cmd /c $args[-1] }    # Windows "target"
+# host entry: Transport = 'ssh'; SshShell = 'pwsh' (or 'powershell' for 5.1)
+```
+
+It does not replace a real smoke test — authentication, banners and the far
+side's PATH are exactly what it skips.
+
 If your change touches the SSH transport, smoke-test it against a real target — the
 interesting failures are all on the wire, not in the parser:
 
 ```powershell
-# objects, not text
+# objects, not text (on a Linux/macOS target use Get-Process: Get-Service is Windows-only)
 Invoke-WinMeshCommand <sshhost> { Get-Service } | Where-Object Status -eq 'Running'
+# a single argument arrives whole, not as its first character
+Invoke-WinMeshCommand <sshhost> { param($p) $p } -ArgumentList 'C:\Windows'
 # arguments survive a quote-hostile string
 Invoke-WinMeshCommand <sshhost> { param($s) $s } -ArgumentList 'a b "c" ; d \ % ^ &'
 # a remote failure surfaces locally

@@ -13,7 +13,9 @@
          but may be PowerShell if DefaultShell was changed. Nothing that survives
          both reliably can be written by hand. So the payload travels as a single
          base64 token in `powershell -EncodedCommand`, which both shells pass
-         through untouched.
+         through untouched. The same holds for sh/bash/zsh on a Linux or macOS
+         target (`pwsh -EncodedCommand`): base64 has no character they treat
+         specially.
       2. Encoding. -EncodedCommand expects base64 of UTF-16LE, not UTF-8. Encode
          the payload as UTF-8 and PowerShell reads garbage or refuses to parse.
       3. Objects. The channel carries text, so the result is serialized on the
@@ -50,7 +52,10 @@ function New-WinMeshSshPayload {
     $sbB64   = ConvertTo-WinMeshB64 -Text $ScriptBlock.ToString()
     # No args must mean no positional argument, not an explicit $null (that would
     # override a scriptblock's defaulted parameter). Normalise null to an empty list.
-    $argList = if ($null -eq $ArgumentList) { @() } else { @($ArgumentList) }
+    # The outer @() matters: an `if` expression unrolls its output, so a single
+    # argument would arrive as a bare string — and splatting a string on the far
+    # side passes its first character only.
+    $argList = @(if ($null -ne $ArgumentList) { $ArgumentList })
     $argsB64 = ConvertTo-WinMeshB64 -Text ([System.Management.Automation.PSSerializer]::Serialize($argList))
 
     @"
@@ -137,6 +142,14 @@ function Invoke-WinMeshSsh {
 
     if (-not $marker) {
         $detail = if ($noise.Count) { ($noise -join '; ') } else { "ssh exited with code $code" }
+        # The remote shell could not start PowerShell at all: 127 is "command not
+        # found" in sh/bash/zsh, 9009 in cmd.exe. Name the fix — the default
+        # SshShell 'powershell' does not exist on Linux/macOS, and a non-interactive
+        # ssh session skips login profiles, so its PATH can miss a pwsh that an
+        # interactive terminal finds (macOS in particular).
+        if ($code -in @(127, 9009) -or $detail -match 'command not found|is not recognized') {
+            $detail += " — PowerShell was not found on the target. Set SshShell for this host: 'pwsh' on Linux/macOS, or its full path (run 'command -v pwsh' on the target) if the ssh session's PATH misses it."
+        }
         throw "winmesh(ssh) $($HostEntry.Address): no response from the target — $detail"
     }
 
