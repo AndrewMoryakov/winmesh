@@ -50,7 +50,10 @@ function New-WinMeshSshPayload {
     $sbB64   = ConvertTo-WinMeshB64 -Text $ScriptBlock.ToString()
     # No args must mean no positional argument, not an explicit $null (that would
     # override a scriptblock's defaulted parameter). Normalise null to an empty list.
-    $argList = if ($null -eq $ArgumentList) { @() } else { @($ArgumentList) }
+    # The outer @() matters: an `if` expression unrolls its output, so a single
+    # argument would arrive as a bare string — and splatting a string on the far
+    # side passes its first character only.
+    $argList = @(if ($null -ne $ArgumentList) { $ArgumentList })
     $argsB64 = ConvertTo-WinMeshB64 -Text ([System.Management.Automation.PSSerializer]::Serialize($argList))
 
     @"
