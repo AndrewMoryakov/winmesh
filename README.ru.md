@@ -111,7 +111,7 @@ ssh-транспорт работает в любом направлении; Wi
 
 **Почему WinRM остаётся Windows-к-Windows.** У PowerShell 7 на Linux/macOS нет
 поддерживаемого WinRM-клиента (`Invoke-Command -ComputerName`, `Test-WSMan` и диск
-`WSMan:` отсутствуют или зависят от заброшенного стека PSWSMan/OMI), а хранилище
+`WSMan:` отсутствуют или зависят от стороннего стека PSWSMan/OMI), а хранилище
 учётных данных — это DPAPI, который есть только в Windows: вне Windows
 `Export-Clixml` записывает пароль простым hex. Поэтому на Linux/macOS-контроллере
 `Register-WinMeshCredential`, `Connect-WinMeshHost`, `Invoke-WinMeshCommand` и
@@ -145,7 +145,7 @@ pwsh -c 'Import-Module ./winmesh.psd1; Test-WinMeshFleet'
 ```
 
 - **Linux:** установите `openssh-server` и [PowerShell 7](https://learn.microsoft.com/powershell/scripting/install/installing-powershell-on-linux) из пакетов дистрибутива или Microsoft.
-- **macOS:** включите *Удалённый вход* (Системные настройки → Основные → Общий доступ, или `sudo systemsetup -setremotelogin on`) и установите [PowerShell 7](https://learn.microsoft.com/powershell/scripting/install/installing-powershell-on-macos).
+- **macOS:** включите *Удалённый вход* (Системные настройки → Основные → Общий доступ) и установите [PowerShell 7](https://learn.microsoft.com/powershell/scripting/install/installing-powershell-on-macos).
 - Неинтерактивная ssh-команда не читает login-профили, поэтому её `PATH` может отличаться от вашего терминала. Если winmesh сообщает, что PowerShell не найден, укажите в `SshShell` полный путь, который печатает `command -v pwsh` на цели.
 
 У Linux/macOS-цели в `Test-WinMeshHost` нет проверки *full admin token*: обычный

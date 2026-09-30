@@ -7,7 +7,7 @@
 
       * PowerShell 7 on Linux/macOS has no supported WinRM client — Invoke-Command
         -ComputerName, Test-WSMan and the WSMan: drive are either absent or depend
-        on the unmaintained PSWSMan/OMI stack;
+        on the third-party PSWSMan/OMI stack;
       * the credential store is DPAPI, which exists only on Windows. Export-Clixml
         of a PSCredential on Linux/macOS writes the password unencrypted.
 

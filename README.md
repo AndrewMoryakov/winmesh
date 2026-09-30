@@ -111,7 +111,7 @@ The ssh transport works in every direction; WinRM needs Windows on both ends.
 
 **Why WinRM stays Windows-to-Windows.** PowerShell 7 on Linux/macOS has no
 supported WinRM client (`Invoke-Command -ComputerName`, `Test-WSMan` and the
-`WSMan:` drive are missing or depend on the unmaintained PSWSMan/OMI stack), and
+`WSMan:` drive are missing or depend on the third-party PSWSMan/OMI stack), and
 the credential store is DPAPI, which exists only on Windows — off Windows,
 `Export-Clixml` writes a password as plain hex. So on a Linux/macOS controller
 `Register-WinMeshCredential`, `Connect-WinMeshHost`, `Invoke-WinMeshCommand` and
@@ -144,7 +144,7 @@ scriptblock runs in `pwsh` there, and results still come back as objects. Set
 ```
 
 - **Linux:** install `openssh-server` and [PowerShell 7](https://learn.microsoft.com/powershell/scripting/install/installing-powershell-on-linux) from your distribution's or Microsoft's packages.
-- **macOS:** turn on *Remote Login* (System Settings → General → Sharing, or `sudo systemsetup -setremotelogin on`) and install [PowerShell 7](https://learn.microsoft.com/powershell/scripting/install/installing-powershell-on-macos).
+- **macOS:** turn on *Remote Login* (System Settings → General → Sharing) and install [PowerShell 7](https://learn.microsoft.com/powershell/scripting/install/installing-powershell-on-macos).
 - A non-interactive ssh command skips login profiles, so its `PATH` can differ from your terminal's. If winmesh reports that PowerShell was not found, set `SshShell` to the full path printed by `command -v pwsh` on the target.
 
 On a Linux/macOS target `Test-WinMeshHost` has no *full admin token* check: an
