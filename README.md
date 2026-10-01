@@ -99,7 +99,7 @@ Everything listed here is implemented in this repository; the repository labels 
 - **Target bootstrap (WinRM).** `New-WinMeshBootstrap` generates a four-step script: enable PowerShell Remoting, narrow port 5985 to `AllowedSubnets`, grant a full admin token to local accounts in remote sessions, print the facts for your config. → [Setup](#setup--step-by-step)
 - **Credential store (WinRM only).** `Register-WinMeshCredential` saves a DPAPI-encrypted credential per id. → [Credential store](#credential-store)
 - **Controller setup (WinRM only).** `Connect-WinMeshHost` starts the local WinRM service and adds the target to `TrustedHosts`; honours `-WhatIf`. → [Setup](#setup--step-by-step)
-- **SSH server installers (optional).** Standalone scripts that install and start OpenSSH on a Windows or Linux target with TCP/22 restricted to the ranges you pass. → [SSH server setup](docs/ssh-server-setup.md)
+- **SSH server installers (optional).** Standalone scripts that install and start OpenSSH on a Windows or Linux target. The Windows script restricts TCP/22 to the ranges you pass; the Linux script does so only when UFW or firewalld is active (with neither it only prints a warning). → [SSH server setup](docs/ssh-server-setup.md)
 
 ### Controlling network exposure
 
@@ -563,7 +563,7 @@ the machine, and its address must fall inside `AllowedSubnets`.
 | `New-WinMeshBootstrap` | generate the target-prep script | controller | no |
 | `Get-WinMeshFirewallScope` / `Set-WinMeshFirewallScope` | show / re-apply which networks may reach WinRM — *winrm only* | controller (acts on the target over WinRM) | no on the controller; the account used on the target must be allowed to change firewall rules |
 | *(bootstrap on target)* | enable WinRM, narrow the port — *winrm only* | **target** | **yes** |
-| *(optional)* `scripts/windows/Install-Win32OpenSSH.ps1`, `scripts/linux/install-openssh-server.sh` | install and start an SSH server with TCP/22 restricted — see [SSH server setup](docs/ssh-server-setup.md) | **target** | **yes** (Administrator / root) |
+| *(optional)* `scripts/windows/Install-Win32OpenSSH.ps1`, `scripts/linux/install-openssh-server.sh` | install and start an SSH server; TCP/22 is restricted to the ranges you pass on Windows, and on Linux only when UFW or firewalld is active — see [SSH server setup](docs/ssh-server-setup.md) | **target** | **yes** (Administrator / root) |
 
 Parameters, as defined in the code (`functions/`):
 
@@ -620,7 +620,7 @@ Subnet precedence: `-AllowedSubnets` if passed, otherwise `Defaults.AllowedSubne
 | Controller | `<id>.cred.xml` in the credential store | `Register-WinMeshCredential` |
 | Target (WinRM) | PowerShell Remoting enabled; `RemoteAddress` of the inbound 5985 rules narrowed; `LocalAccountTokenFilterPolicy = 1` (remote sessions of local accounts get a full admin token) | the generated bootstrap script |
 | Target (WinRM) | the same firewall rules re-scoped later | `Set-WinMeshFirewallScope` |
-| Target (SSH, optional) | OpenSSH installed and started, rule `winmesh-sshd` for TCP/22 (Windows) or restricted UFW/firewalld rules (Linux), broader TCP/22 allowances disabled or removed | the scripts in `scripts/` — see [SSH server setup](docs/ssh-server-setup.md) |
+| Target (SSH, optional) | OpenSSH installed and started, rule `winmesh-sshd` for TCP/22 (Windows) or, on Linux only when UFW or firewalld is active, restricted rules in it (with neither active the script warns and changes no firewall); broader TCP/22 allowances disabled or removed where a firewall was changed | the scripts in `scripts/` — see [SSH server setup](docs/ssh-server-setup.md) |
 
 ---
 
@@ -781,7 +781,7 @@ On a **non-English Windows**, or a domain-joined machine whose DC is unreachable
 
 Windows PowerShell 5.1 or PowerShell 7 on Windows; PowerShell 7 on Linux and macOS (see [Platforms](#platforms)). A network giving machines stable, mutually reachable addresses — overlay (Tailscale, NetBird, ZeroTier) or plain LAN. Administrator rights only for `Connect-WinMeshHost` on the controller and the bootstrap on each target — neither applies to ssh hosts. For the ssh transport, an `ssh` client on the controller (built into Windows 10/11, Server 2019+, Linux and macOS) and an SSH server on the target — plus PowerShell 7 there if the target is Linux or macOS.
 
-For repeatable target-side OpenSSH installation on Windows (Win32-OpenSSH) and Linux, see [SSH server setup](docs/ssh-server-setup.md). The scripts require the allowed source subnet explicitly, rather than opening TCP/22 to every address.
+For repeatable target-side OpenSSH installation on Windows (Win32-OpenSSH) and Linux, see [SSH server setup](docs/ssh-server-setup.md). The scripts require the allowed source subnet explicitly and do not add a rule that opens TCP/22 to every address. On Linux the subnet is applied only when UFW or firewalld is active: with neither, the script starts sshd, prints a warning and exits successfully without applying it, so review the host firewall yourself.
 
 ## Troubleshooting
 
@@ -817,7 +817,7 @@ winmesh is at version 0.2.1. It is a small module meant to stay readable in one 
 - **SSH is non-interactive** (`BatchMode=yes`) and does not manage keys, passwords or host-key policy; use `SshOptions` and `~/.ssh/config` for that.
 - **The firewall-scope guard is IPv4 only.** The lock-out check compares live WinRM sources with the new ranges as IPv4 CIDRs, and `Get-WinMeshFirewallScope` compares scopes by network prefix — a light check, not an exact comparison.
 - **The firewall rules touched are all enabled inbound rules whose local port is 5985**, on the target.
-- **The SSH installers** support `apt`, `dnf`, `yum` and `pacman` on Linux and act on UFW or firewalld only; they do not create accounts or add public keys.
+- **The SSH installers** support `apt`, `dnf`, `yum` and `pacman` on Linux and change firewall rules only through UFW or firewalld, and only when one of them is active (with neither, the Linux script starts sshd, prints a warning and exits successfully without applying the CIDRs); they do not create accounts or add public keys.
 - **Measured claims.** The localized-Windows and download observations in [Gotchas](#gotchas-baked-in) are reported as they were observed; the cause of the failed large download was not established.
 
 ## Documentation map
