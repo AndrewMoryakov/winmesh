@@ -4,7 +4,7 @@
 
 <h1 align="center">winmesh</h1>
 
-<p align="center"><b>Name a machine, run PowerShell on it — over WinRM or SSH, on any network. For admins and devs with a handful of Windows boxes — and the Linux and macOS machines next to them.</b></p>
+<p align="center"><b>Name a machine, run PowerShell on it — one config file, two stock transports (WinRM or SSH), real objects back, on any network. With channel health checks, firewall scoping for WinRM, a local credential store and optional SSH-server installers. For admins and devs with a handful of Windows boxes — and the Linux and macOS machines next to them.</b></p>
 
 <p align="center">
   <a href="LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/License-MIT-informational.svg"></a>
@@ -21,26 +21,100 @@ Invoke-WinMeshCommand workstation-01 { hostname; whoami }     # run a command on
 Test-WinMeshFleet                                             # check every host in the config at once
 ```
 
-winmesh is a thin layer for linking Windows machines over PowerShell Remoting **or SSH**. Name a host, run commands on it, get real objects back. The controller and the targets can be Windows, Linux or macOS: WinRM between Windows machines, SSH everywhere — see [Platforms](#platforms).
+winmesh is a small PowerShell module for linking Windows machines over PowerShell Remoting **or SSH**. You describe your machines once in a config file; after that you name a host, run commands on it, and get real objects back. The controller and the targets can be Windows, Linux or macOS: WinRM between Windows machines, SSH everywhere — see [Platforms](#platforms).
 
-## Why winmesh?
+The module has nine commands. Four run things and check things (`Invoke-WinMeshCommand`, `Test-WinMeshHost`, `Test-WinMeshFleet`, `Get-WinMeshConfig`), three prepare the WinRM path (`New-WinMeshBootstrap` for the target, `Register-WinMeshCredential` and `Connect-WinMeshHost` for the controller) and two show and change which networks may reach a host's WinRM port (`Get-`/`Set-WinMeshFirewallScope`). Two optional standalone scripts install an SSH server on a Windows or Linux target. There are no agents and no dependencies beyond PowerShell and, for SSH, an `ssh` client.
 
-- **If** you have a few Windows machines (workstations, a NAS, lab boxes) and want to run PowerShell on them by name, **then** winmesh gives you `Invoke-WinMeshCommand <name> { ... }` after a one-time setup per machine.
-- **If** Ansible feels like overkill for a handful of machines, **then** winmesh is deliberately small: one config file, stock WinRM or `ssh`, no agents, no extra dependencies.
-- **If** your machines are linked by Tailscale, NetBird, ZeroTier or a plain LAN, **then** it works the same — winmesh only needs stable, mutually reachable addresses, not any particular network. **Not tied to any specific network.**
-- **If** you would rather not learn the WinRM, firewall and SSH-quoting pitfalls the hard way, **then** the [gotchas](#gotchas-baked-in) are already baked in.
+It is a small pre-1.0 module (version 0.2.1) built for a few machines, not for large fleets or configuration management, and the repository has no automated test suite — checks are manual, described in [CONTRIBUTING.md](CONTRIBUTING.md). See [Status and known limits](#status-and-known-limits).
 
-This is not a new protocol. Under the hood it is stock WinRM and `Invoke-Command`, or stock `ssh` — you pick per host with one config field. The value is the opinionated bundle described below. It is **not** for large fleets or configuration management — see [what it deliberately does not do](#what-it-deliberately-does-not-do).
+**Contents:** [In plain words](#in-plain-words) · [What's inside](#whats-inside) · [How it works](#how-it-works) · [Quick start](#quick-start) · [Prerequisites](#prerequisites) · [Platforms](#platforms) · [Setup, step by step](#setup--step-by-step) · [Usage examples](#usage-examples) · [Over SSH](#over-ssh-instead-of-winrm) · [Allowed subnets and firewall scope](#choosing-allowed-subnets) · [Security notes](#security-notes) · [Commands](#commands) · [Config reference](#config-reference) · [What it does not do](#what-it-deliberately-does-not-do) · [Gotchas](#gotchas-baked-in) · [Troubleshooting](#troubleshooting) · [Status](#status-and-known-limits) · [Docs map](#documentation-map)
 
-## Features
+## In plain words
 
-- **Name-based addressing** — hosts live in one `config/hosts.psd1`; you type `workstation-01`, not an IP.
-- **Two transports, one interface** — `winrm` (default) or `ssh`, chosen per host. Same names, same commands, same object results.
-- **Real objects, not text** — pipe results like any PowerShell output, over either transport.
-- **Firewall narrowed to trusted subnets** — the bootstrap restricts the WinRM port to `AllowedSubnets`; view or re-apply it later with `Get-`/`Set-WinMeshFirewallScope`.
-- **Local credential store** — per-target credentials encrypted with DPAPI, never in git (WinRM).
-- **One-command channel checks** — `Test-WinMeshHost` and `Test-WinMeshFleet`.
-- **Gotchas baked in** — lessons from real debugging, built into the scripts and [written down](#gotchas-baked-in).
+### The problem
+
+Once you own more than one computer, you keep wanting to do something on another one: check a service, read a log, copy a file, see whether it is even up. The tools for that exist (PowerShell Remoting, SSH) but each has setup steps and traps that are easy to hit and slow to diagnose: the remote side must be switched on by a local administrator, the firewall port is opened wider than you think, authentication falls back to a mode you did not expect, and SSH hands you text instead of PowerShell objects, with quoting rules that differ between shells.
+
+### Who it is for
+
+People who run a handful of machines — workstations, a NAS, lab boxes, a few Linux or macOS hosts — and want to address them by a short name from one place, on whatever network links them (Tailscale, NetBird, ZeroTier or a plain LAN). It is for the person who finds Ansible too heavy for this job. Advanced users get per-host transport and firewall scope, a scriptable health check with a structured result, and a transport whose internals are documented below.
+
+### What you get
+
+- **One way to say "run this there".** `Invoke-WinMeshCommand <name> { ... }` works the same whether the host is reached over WinRM or SSH; the transport is one config field per host.
+- **Objects, not text.** Results come back as PowerShell objects you can pipe and filter, over either transport.
+- **Any network.** winmesh only needs stable, mutually reachable addresses, not any particular network: Tailscale, NetBird, ZeroTier or a plain LAN work the same way.
+- **A map of your machines.** One `config/hosts.psd1` with a short name, an address and (for WinRM) a credential id per host, plus defaults you can override per host.
+- **Know before you rely on it.** `Test-WinMeshHost` and `Test-WinMeshFleet` check the whole chain — port, response, credentials, an actual command, privilege level — and return a structured result that scripts can gate on.
+- **A narrower WinRM exposure.** The bootstrap script restricts the WinRM port to the subnets you list, and `Get-`/`Set-WinMeshFirewallScope` show and re-apply that later, with a guard against locking yourself out.
+- **A local credential store.** WinRM credentials are encrypted with DPAPI and kept outside git.
+- **Lessons already built in.** A long list of WinRM, firewall, SSH-quoting and localization traps is handled in the scripts and [written down](#gotchas-baked-in).
+
+### What it is not
+
+- Not a new protocol and not an agent: under the hood it is stock WinRM with `Invoke-Command`, or stock `ssh`.
+- Not configuration management and not for large fleets (use Ansible or DSC for that). Fleet checks run host by host, not in parallel.
+- Not a way around the first admin step: enabling WinRM needs a local administrator on the target, so the module only generates the script.
+- Not a secret manager for SSH: it never prompts for, stores or forwards an SSH key or password (`BatchMode=yes`).
+- Not WinRM from Linux or macOS: that path needs a Windows controller. Use SSH there.
+- Not an SSH-server installer built into the module: the optional scripts are standalone and are never called by it.
+
+### Glossary
+
+| Term | Meaning here |
+|---|---|
+| **Controller** | The machine you run winmesh *from* (your laptop). It holds the config and the credential store. |
+| **Target** | A machine you want to reach. It runs the WinRM listener or an SSH server. |
+| **Host entry** | One machine in `config/hosts.psd1`: a short name, an address and transport settings. |
+| **Transport** | How winmesh reaches a host: `winrm` (default) or `ssh`, set per host. Everything above the transport is the same. |
+| **WinRM / PowerShell Remoting** | Windows' built-in remote-management channel (HTTP port 5985 here), driven by `Invoke-Command`. |
+| **Bootstrap** | The one-time script you run on a target as Administrator to enable WinRM and narrow its firewall. |
+| **Overlay network** | A VPN-style network (Tailscale, NetBird, ZeroTier) that gives machines stable addresses wherever they are. |
+| **`AllowedSubnets`** | The list of source networks allowed to reach a host's WinRM port. `100.64.0.0/10` is the default, the shared range Tailscale and NetBird use. |
+| **TrustedHosts** | A client-side WinRM list; connecting by IP address needs the target in it, because Kerberos does not apply. |
+| **DPAPI** | The Windows facility that encrypts the saved credential so only your account on this controller can read it. |
+
+## What's inside
+
+Everything listed here is implemented in this repository; the repository labels nothing as experimental or planned. Items marked **WinRM only** need a Windows controller and a WinRM host.
+
+### Addressing and configuration
+
+- **Name-based hosts in one file.** `config/hosts.psd1` (a PowerShell data file, parsed without executing code) lists hosts and defaults; per-host values override defaults; `$env:WINMESH_CONFIG` or `-Config` selects another file. `Get-WinMeshConfig` loads and validates it. → [Config reference](#config-reference)
+- **Older key still honoured.** A legacy `TailscaleCidr` default is read as `AllowedSubnets` when `AllowedSubnets` is absent. → [Config reference](#config-reference)
+
+### Running commands
+
+- **`Invoke-WinMeshCommand`.** Run a scriptblock on a named host, with `-ArgumentList`, and get objects back. → [Usage examples](#usage-examples)
+- **Two interchangeable transports.** `winrm` (default) uses `Invoke-Command` with a stored credential; `ssh` uses the system `ssh` client with the payload packed as one base64 token and the result serialized with the same CliXml engine remoting uses. → [Over SSH](#over-ssh-instead-of-winrm)
+- **Mixed fleets.** Windows, Linux and macOS hosts in one config; SSH works in every direction. → [Platforms](#platforms)
+
+### Checking health
+
+- **`Test-WinMeshHost` / `Test-WinMeshFleet`.** A readable report plus a result object (`Host`, `Address`, `Transport`, `Ok`, `Checks`); `-Quiet` for automation. The checks depend on the transport. → [Test-WinMeshHost in detail](#test-winmeshhost-in-detail)
+- **SSH banner.** The SSH check reads the server banner, so you can see which SSH server actually answered. → [Gotchas](#gotchas-baked-in)
+
+### Preparing machines
+
+- **Target bootstrap (WinRM).** `New-WinMeshBootstrap` generates a four-step script: enable PowerShell Remoting, narrow port 5985 to `AllowedSubnets`, grant a full admin token to local accounts in remote sessions, print the facts for your config. → [Setup](#setup--step-by-step)
+- **Credential store (WinRM only).** `Register-WinMeshCredential` saves a DPAPI-encrypted credential per id. → [Credential store](#credential-store)
+- **Controller setup (WinRM only).** `Connect-WinMeshHost` starts the local WinRM service and adds the target to `TrustedHosts`; honours `-WhatIf`. → [Setup](#setup--step-by-step)
+- **SSH server installers (optional).** Standalone scripts that install and start OpenSSH on a Windows or Linux target with TCP/22 restricted to the ranges you pass. → [SSH server setup](docs/ssh-server-setup.md)
+
+### Controlling network exposure
+
+- **`AllowedSubnets`.** One setting (global, overridable per host) that decides which source networks may reach WinRM. → [Choosing allowed subnets](#choosing-allowed-subnets)
+- **`Get-WinMeshFirewallScope` / `Set-WinMeshFirewallScope` (WinRM only).** Compare the live rule with the config and re-apply it; a guard refuses a change that would cut your own live session unless `-Force`; `-WhatIf` previews. → [Firewall scope](#seeing-and-changing-which-networks-may-connect)
+- **Security notes.** Why the overlay is the boundary and the firewall range is a second layer. → [Security notes](#security-notes)
+
+### Knowledge you do not have to rediscover
+
+- **Gotchas.** WinRM, firewall, SSH, localized-Windows and Linux/macOS traps from real debugging, baked into the scripts and listed. → [Gotchas baked in](#gotchas-baked-in)
+- **Troubleshooting table.** Symptom, cause, fix for the errors the module itself raises. → [Troubleshooting](#troubleshooting)
+
+### Not built (by design or not yet)
+
+No configuration management, parallel fan-out, SSH key or password handling, WinRM from Linux/macOS, or HTTPS (port 5986) handling — see [what it deliberately does not do](#what-it-deliberately-does-not-do) and [Status and known limits](#status-and-known-limits).
 
 ## How it works
 
@@ -48,10 +122,20 @@ This is not a new protocol. Under the hood it is stock WinRM and `Invoke-Command
   <img src="docs/assets/winmesh-how-it-works.png" alt="winmesh: a controller looks up a host name in the config and reaches the machine over WinRM or SSH" width="100%">
 </p>
 
-1. **Name your machines.** List each target — a short name, an address, a credential id — in `config/hosts.psd1`.
-2. **Prepare once.** Run the generated bootstrap script on each target (enables WinRM, narrows the firewall), and `Connect-WinMeshHost` on the controller.
+1. **Name your machines.** List each target — a short name, an address, a credential id (WinRM) or SSH settings — in `config/hosts.psd1`.
+2. **Prepare once.** For a WinRM target, run the generated bootstrap script on it and `Connect-WinMeshHost` on the controller. An SSH target needs only an SSH server.
 3. **Run by name.** `Invoke-WinMeshCommand <name> { ... }` picks the host's transport — `winrm` or `ssh` — and runs your scriptblock there.
 4. **Get objects back.** Results come back as PowerShell objects you can pipe on.
+
+You do a one-time setup per machine; day to day you just call `Invoke-WinMeshCommand <name> { ... }`.
+
+| Step | WinRM host | SSH host |
+|---|---|---|
+| Target prep | bootstrap script, run once as Administrator | SSH server (+ PowerShell 7 on Linux/macOS), see [SSH server setup](docs/ssh-server-setup.md) |
+| Controller prep | `Register-WinMeshCredential`, `Connect-WinMeshHost` (Windows only) | none — the `ssh` client authenticates on its own |
+| Run | `Invoke-Command -ComputerName <address> -Credential <stored>` | `ssh ... <shell> -EncodedCommand <base64>` |
+| Result | objects from remoting | objects rebuilt from CliXml |
+| Check | port 5985, WS-Management, credentials, command, admin token | port 22 + banner, command, admin token (Windows) or root/not root (Linux/macOS) |
 
 ## Quick start
 
@@ -77,18 +161,6 @@ Invoke-WinMeshCommand workstation-01 { hostname; whoami }
 Create the config **before** generating the bootstrap: `New-WinMeshBootstrap` takes the firewall scope from `AllowedSubnets` in `config\hosts.psd1`, and without a config it falls back to `100.64.0.0/10` (the Tailscale/NetBird range) — a controller on a plain LAN or ZeroTier would then be locked out. Or pass `-AllowedSubnets` explicitly — see [Choosing allowed subnets](#choosing-allowed-subnets).
 
 Targets reached over **SSH** skip the bootstrap, the credential and the `Connect-WinMeshHost` steps entirely — they need none of the WinRM changes. See [Over SSH instead of WinRM](#over-ssh-instead-of-winrm).
-
----
-
-## Concepts in 30 seconds
-
-- **Controller** — the machine you run winmesh *from* (your laptop). It holds the config and the credential store.
-- **Target** — a machine you want to reach. It runs the WinRM listener or an SSH server.
-- **Config** (`config/hosts.psd1`) — the list of targets: a short name, an address, a credential id.
-- **Credential store** — encrypted per-target credentials, kept locally (never in git). WinRM only.
-- **Transport** — `winrm` (default) or `ssh`, set per host. Everything above the transport is identical: same names, same commands, same object results.
-
-You do a one-time setup per machine, then day-to-day you just call `Invoke-WinMeshCommand <name> { ... }`.
 
 ---
 
@@ -241,8 +313,6 @@ Invoke-WinMeshCommand workstation-01 { param($p) Test-Path $p } -ArgumentList 'C
 Test-WinMeshFleet          # check every host in the config at once
 ```
 
----
-
 ## Usage examples
 
 Everything below assumes the host `workstation-01` is set up (Steps 1–5).
@@ -366,6 +436,23 @@ the far side with the same CliXml engine remoting uses, then rehydrated here.
 Anything more specific — jump hosts, per-host keys, aliases — belongs in your
 `~/.ssh/config`, which `ssh` reads as usual. winmesh does not duplicate it.
 
+### What goes over the wire
+
+For readers who want the internals (`functions/Invoke-WinMeshSsh.ps1`). One call runs, roughly:
+
+```text
+ssh -o BatchMode=yes -o ConnectTimeout=<SshTimeout> [-p <SshPort>] [-o <each SshOptions item>] [user@]<Address> \
+    "<SshShell> -NoProfile -NonInteractive -EncodedCommand <base64 of UTF-16LE payload>"
+```
+
+- **No prompts.** `BatchMode=yes` means `ssh` never asks for a password or passphrase. Authentication must work non-interactively: a key, an agent, or an overlay network's peer identity. `-p` is added only when the port is not 22.
+- **The payload** is a small PowerShell script that decodes your arguments (serialized with `PSSerializer`, then base64) and your scriptblock text (base64), runs the block, serializes the result with `PSSerializer` and prints it as one marker line: `@@WINMESH-OK@@<base64>`. A failure inside the block prints `@@WINMESH-ERR@@<base64>` instead.
+- **Results.** The marker line is deserialized locally, so you get objects. As with remoting, they are rebuilt from serialized data (property bags), not live objects. Arguments must be serializable the same way.
+- **Everything else the remote prints** (`Write-Host`, native command output) is passed through to your host rather than swallowed.
+- **Errors.** A failure inside the block is rethrown locally as `winmesh(ssh) <address>: <message>` — only the message text crosses the wire, not the error object. If no marker line comes back at all, the error is `winmesh(ssh) <address>: no response from the target — <ssh output or exit code>`; for exit code 127 (`sh`/`bash`/`zsh`) or 9009 (`cmd.exe`), or output saying the command was not found, it adds the hint to set `SshShell`.
+- **The payload is not secret.** It is an ordinary command-line argument; base64 is encoding, not protection. Avoid putting secrets in the scriptblock or `-ArgumentList` — they can appear in process listings and in `-Verbose` output, which prints the full `ssh` argument list. The whole script travels on the command line, so a very large scriptblock may run into command-line length limits (not measured).
+- **The port probe** used by `Test-WinMeshHost` opens a plain TCP connection (not `Test-NetConnection`, which is Windows-only) and reads the SSH banner.
+
 ### If you use an overlay VPN
 
 `AllowedSubnets` (used by the WinRM bootstrap) applies to WinRM only. If you serve
@@ -463,6 +550,7 @@ the machine, and its address must fall inside `AllowedSubnets`.
 - **The rule's profile still matters.** It applies to Domain+Private; if an overlay
   adapter is categorized Public the rule will not cover it. Keep overlay adapters
   Private, or widen the rule's profile once the source range is set.
+
 ## Commands
 
 | Command | What it does | Runs on | Admin |
@@ -473,13 +561,72 @@ the machine, and its address must fall inside `AllowedSubnets`.
 | `Test-WinMeshHost` / `Test-WinMeshFleet` | check the channel | controller | no |
 | `Invoke-WinMeshCommand` | run a command on a host | controller | no |
 | `New-WinMeshBootstrap` | generate the target-prep script | controller | no |
+| `Get-WinMeshFirewallScope` / `Set-WinMeshFirewallScope` | show / re-apply which networks may reach WinRM — *winrm only* | controller (acts on the target over WinRM) | no on the controller; the account used on the target must be allowed to change firewall rules |
 | *(bootstrap on target)* | enable WinRM, narrow the port — *winrm only* | **target** | **yes** |
+| *(optional)* `scripts/windows/Install-Win32OpenSSH.ps1`, `scripts/linux/install-openssh-server.sh` | install and start an SSH server with TCP/22 restricted — see [SSH server setup](docs/ssh-server-setup.md) | **target** | **yes** (Administrator / root) |
+
+Parameters, as defined in the code (`functions/`):
+
+| Command | Parameters |
+|---|---|
+| `Get-WinMeshConfig` | `-Path` (default: `$env:WINMESH_CONFIG`, else `config/hosts.psd1` next to the module) |
+| `Invoke-WinMeshCommand` | `-Name` (position 0), `-ScriptBlock` (position 1), `-ArgumentList`, `-Config` (a config object from `Get-WinMeshConfig`) |
+| `Test-WinMeshHost` | `-Name` (position 0), `-Config`, `-Quiet` |
+| `Test-WinMeshFleet` | `-Config`, `-Quiet` |
+| `New-WinMeshBootstrap` | `-AllowedSubnets`, `-OutFile`, and `-Name` (accepted as a label, but it does not change the generated script) |
+| `Register-WinMeshCredential` | `-Id` (required), `-Credential`, `-Store` |
+| `Connect-WinMeshHost` | `-Name` (required), `-Config`, `-WhatIf` |
+| `Get-WinMeshFirewallScope` | `-Name` (position 0), `-Config` |
+| `Set-WinMeshFirewallScope` | `-Name` (position 0), `-Config`, `-Force`, `-WhatIf` |
+
+### Test-WinMeshHost in detail
+
+`Test-WinMeshHost` checks the whole chain, prints a readable report unless `-Quiet` is set, and always returns an object: `Host`, `Address`, `Transport`, `Ok` (true only if every check passed) and `Checks` (a list of `Check`, `Ok`, `Detail`). Which checks run depends on the host's transport:
+
+| Transport | Checks (in order) |
+|---|---|
+| `winrm` (Windows controller) | `WinRM port 5985` · `WS-Management responds` · `credentials` · `command runs` · `full admin token` (the last two only when credentials and WS-Management passed) |
+| `ssh` | `ssh port <n>` with the server banner as detail · `command runs` (shows host, user and OS) · `full admin token` on a Windows target only |
+| `winrm` host on a Linux/macOS controller | one failed `WinRM client` check — the host is reported, not an exception, so a mixed fleet is still checked |
+
+On a Linux or macOS SSH target there is no admin-token check: an ordinary login is healthy, root comes through `sudo`, and the *command runs* detail says `root` or `not root`. A `reduced` admin token on a Windows host means the session does not carry a full administrator token (WinRM: the bootstrap sets `LocalAccountTokenFilterPolicy`; SSH: some servers, including the one NetBird ships, hand out a non-elevated session).
+
+`Test-WinMeshFleet` runs `Test-WinMeshHost` for every host in the config one after another, prints a summary and returns the list of result objects. It is a function, so it sets no process exit code — use the `Ok` field.
+
+### Credential store
+
+- **What is saved.** `Register-WinMeshCredential -Id <id>` writes `<id>.cred.xml` (characters outside `[\w.@-]` become `_`) into the credential store, by default `~\.winmesh\creds`, with `Export-Clixml`. On Windows the password in that file is DPAPI-encrypted: only the same account on the same machine can read it.
+- **Which login to give.** Domain machine: `DOMAIN\user`; workgroup machine: `COMPUTERNAME\user` — the bootstrap prints the exact string as `LoginForCred`.
+- **Prompting.** Without `-Credential` it asks with `Get-Credential` and falls back to console input if no prompt appears.
+- **Where it is used.** `Invoke-WinMeshCommand`, `Test-WinMeshHost` and the firewall-scope commands read it by the host's `Credential` id. A missing file raises `No credential '<id>'. Create it: Register-WinMeshCredential -Id '<id>'`.
+- **Windows only.** Off Windows `Export-Clixml` would write the password as plain hex, so `Register-WinMeshCredential` refuses to run there. The SSH path does not use this store.
+
+### The bootstrap script
+
+`New-WinMeshBootstrap` returns (or, with `-OutFile`, saves as UTF-8 with BOM) a script with four numbered steps:
+
+1. `Enable-PSRemoting -Force -SkipNetworkProfileCheck` (the overlay adapter is often in the Public profile, which makes a plain `Enable-PSRemoting` refuse).
+2. Set `RemoteAddress` on every enabled inbound firewall rule whose local port is 5985 to the allowed subnets. An empty list skips narrowing; if no rule for 5985 is found it prints a warning to check manually.
+3. Set `LocalAccountTokenFilterPolicy = 1` in `HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System`, so local accounts get a full administrator token in remote sessions (needed for non-domain machines and for administrators other than the built-in one).
+4. Print the machine facts for the config: `ComputerName`, `Domain`, `InDomain`, `User`, `LoginForCred`.
+
+Subnet precedence: `-AllowedSubnets` if passed, otherwise `Defaults.AllowedSubnets` from the config, otherwise — only if no config can be loaded — `100.64.0.0/10`.
+
+### What changes on your machines
+
+| Where | Change | Made by |
+|---|---|---|
+| Controller | WinRM service started and set to Automatic; target address added to `TrustedHosts` | `Connect-WinMeshHost` (honours `-WhatIf`) |
+| Controller | `<id>.cred.xml` in the credential store | `Register-WinMeshCredential` |
+| Target (WinRM) | PowerShell Remoting enabled; `RemoteAddress` of the inbound 5985 rules narrowed; `LocalAccountTokenFilterPolicy = 1` (remote sessions of local accounts get a full admin token) | the generated bootstrap script |
+| Target (WinRM) | the same firewall rules re-scoped later | `Set-WinMeshFirewallScope` |
+| Target (SSH, optional) | OpenSSH installed and started, rule `winmesh-sshd` for TCP/22 (Windows) or restricted UFW/firewalld rules (Linux), broader TCP/22 allowances disabled or removed | the scripts in `scripts/` — see [SSH server setup](docs/ssh-server-setup.md) |
 
 ---
 
 ## Config reference
 
-`config/hosts.psd1` is a PowerShell data file (`.psd1`, not YAML — Windows PowerShell 5.1 has no built-in YAML parser, and `.psd1` is parsed safely without executing code).
+`config/hosts.psd1` is a PowerShell data file (`.psd1`, not YAML — Windows PowerShell 5.1 has no built-in YAML parser, and `.psd1` is parsed safely without executing code). `config/hosts.example.psd1` is the annotated template; your real `config/hosts.psd1` is git-ignored.
 
 ```powershell
 @{
@@ -505,6 +652,20 @@ the machine, and its address must fall inside `AllowedSubnets`.
 
 Point winmesh at a different config with `$env:WINMESH_CONFIG` or `-Config`/`-Path` parameters.
 
+**Keys.** A key in `Defaults` applies to every host; the same key on a host overrides it, except `CredentialStore`, which is read from `Defaults` only.
+
+| Key | Where | Default | Meaning |
+|---|---|---|---|
+| `Address` | host | *(required)* | overlay/LAN address or DNS name |
+| `Transport` | defaults, host | `winrm` | `winrm` or `ssh`; anything else is rejected |
+| `Credential` | host | — | id of the stored credential; **required for `winrm`**, not used for `ssh` |
+| `Note` | host | — | free text for you; winmesh does not read it |
+| `CredentialStore` | defaults | `~\.winmesh\creds` | credential directory; `~` expands to the home directory and either `\` or `/` works on every OS |
+| `AllowedSubnets` | defaults, host | `@('100.64.0.0/10')` | source networks for the WinRM port; `@()` means do not narrow ([details](#choosing-allowed-subnets)) |
+| `SshUser`, `SshPort`, `SshShell`, `SshTimeout`, `SshOptions` | defaults, host | see [SSH options](#over-ssh-instead-of-winrm) | ssh transport only |
+
+**Validation.** `Get-WinMeshConfig` fails with a message if the file is missing, if `Hosts` is empty, if a host has no `Address`, if a transport is not `winrm` or `ssh`, or if a `winrm` host has no `Credential`. The legacy default `TailscaleCidr` is used as `AllowedSubnets` when `AllowedSubnets` itself is absent. The command returns an object with `Path`, `Defaults` (merged with the built-in defaults) and `Hosts`; the other commands accept it through `-Config`.
+
 ---
 
 ## What it deliberately does *not* do
@@ -513,6 +674,7 @@ Point winmesh at a different config with `$env:WINMESH_CONFIG` or `-Config`/`-Pa
 - **Does not move credentials between controllers.** A DPAPI file decrypts only where it was created. The store is local by design.
 - **Does not manage SSH keys or passwords.** Over ssh, authentication is whatever your `ssh` client already negotiates — a key, an agent, or an overlay network's peer identity. winmesh never prompts, stores, or forwards a secret for the ssh path.
 - **The module does not install an SSH server.** Unlike WinRM there is no bootstrap for it: either the overlay VPN already provides one (NetBird does), or you install an OpenSSH server once (plus PowerShell 7 on a Linux/macOS target). For that one step there are optional standalone scripts for Windows and Linux — see [SSH server setup](docs/ssh-server-setup.md).
+
 
 ---
 
@@ -615,13 +777,60 @@ On a **non-English Windows**, or a domain-joined machine whose DC is unreachable
   security software is the obvious suspect, but it was not confirmed. Worth
   knowing as a fallback rather than as an explanation.
 
----
-
 ## Requirements
 
 Windows PowerShell 5.1 or PowerShell 7 on Windows; PowerShell 7 on Linux and macOS (see [Platforms](#platforms)). A network giving machines stable, mutually reachable addresses — overlay (Tailscale, NetBird, ZeroTier) or plain LAN. Administrator rights only for `Connect-WinMeshHost` on the controller and the bootstrap on each target — neither applies to ssh hosts. For the ssh transport, an `ssh` client on the controller (built into Windows 10/11, Server 2019+, Linux and macOS) and an SSH server on the target — plus PowerShell 7 there if the target is Linux or macOS.
 
 For repeatable target-side OpenSSH installation on Windows (Win32-OpenSSH) and Linux, see [SSH server setup](docs/ssh-server-setup.md). The scripts require the allowed source subnet explicitly, rather than opening TCP/22 to every address.
+
+## Troubleshooting
+
+Messages below are raised by the module itself or reported by `Test-WinMeshHost`.
+
+| Symptom | Likely cause | What to do |
+|---|---|---|
+| `Config not found: <path>` | no `config/hosts.psd1`, or `$env:WINMESH_CONFIG` points elsewhere | copy `config/hosts.example.psd1` to `config/hosts.psd1` and fill it in |
+| `Host '<name>' is not in config <path>` | the name is not a key under `Hosts`, or another config file is loaded | check the key and `$env:WINMESH_CONFIG` |
+| `Host '<name>': Credential is missing` | a `winrm` host without a `Credential` id | add the id, or set `Transport = 'ssh'` |
+| `No credential '<id>'. Create it: Register-WinMeshCredential ...` | the credential file does not exist on this controller (DPAPI files are not portable) | run `Register-WinMeshCredential -Id '<id>'` here |
+| `... needs a Windows controller ...` | a `winrm` host used from a Linux/macOS controller | set `Transport = 'ssh'` for the host |
+| `WinRM port 5985` fails, `no connection` | the bootstrap was not run, or the controller's address is outside `AllowedSubnets`, or the machines cannot route to each other | run the bootstrap; check the scope; check the network (overlay joined, same LAN) |
+| `WS-Management responds` fails but the port is open | `TrustedHosts` lacks the address, or the target's WinRM is not set up | run `Connect-WinMeshHost -Name <name>` (admin) and the bootstrap |
+| `full admin token` reduced | the session has no full administrator token | WinRM: make sure the bootstrap ran (`LocalAccountTokenFilterPolicy`); SSH: some servers, including NetBird's, give a non-elevated session |
+| `winmesh(ssh) <address>: no response from the target — ... PowerShell was not found on the target` | `SshShell` is wrong for the target | `pwsh` on Linux/macOS, or the full path printed by `command -v pwsh` on the target |
+| `winmesh(ssh) ...` with `Permission denied` or a timeout | the key or agent login does not work non-interactively (`BatchMode=yes`) | make plain `ssh` log in without prompts first; see [Gotchas](#gotchas-baked-in) for key-file traps |
+| `Connection reset by peer` right after the log says `Accepted publickey` | a domain account on a domain-joined target with no reachable DC | use a local account — see [Gotchas](#gotchas-baked-in) |
+| the `ssh port` banner is not the server you installed | an overlay's own SSH server answers on port 22 | read the banner in the check — see [Gotchas](#gotchas-baked-in) |
+| `Set-WinMeshFirewallScope`: `Refusing: no live WinRM source falls inside the new ranges` | applying would lock out your own session | add your source subnet to `AllowedSubnets`; use `-Force` only at the console |
+| `Get-WinMeshFirewallScope` reports `InSync = False` | the live rule differs from the config's `AllowedSubnets` | run `Set-WinMeshFirewallScope -Name <name> -WhatIf`, then without `-WhatIf` |
+| a script fails to parse on Windows PowerShell 5.1 | file saved without a BOM | save as UTF-8 with BOM |
+
+## Status and known limits
+
+winmesh is at version 0.2.1. It is a small module meant to stay readable in one sitting and dependency-free; it is installed by cloning the repository and importing the manifest (the repository documents no other installation route).
+
+- **No automated test suite.** `CONTRIBUTING.md` describes manual checks: a parse check of every `.ps1`/`.psd1`, `Test-ModuleManifest`, `-WhatIf` behaviour, a smoke test against a real host, and a way to exercise the ssh round trip without a second machine by shadowing `ssh` with a function.
+- **WinRM is HTTP on port 5985 only.** The module has no HTTPS (5986) handling. The channel is Negotiate/Kerberos-encrypted, but it is still an admin channel.
+- **WinRM needs Windows on both ends.** On a Linux/macOS controller the WinRM commands refuse with a clear message and the health checks report a failed `WinRM client` check.
+- **Sequential.** `Test-WinMeshFleet` checks hosts one after another, and `Invoke-WinMeshCommand` targets one host per call; to run something on every host, loop over the config yourself ([example](#usage-examples)).
+- **Results are deserialized objects** over both transports (data, not live objects).
+- **SSH is non-interactive** (`BatchMode=yes`) and does not manage keys, passwords or host-key policy; use `SshOptions` and `~/.ssh/config` for that.
+- **The firewall-scope guard is IPv4 only.** The lock-out check compares live WinRM sources with the new ranges as IPv4 CIDRs, and `Get-WinMeshFirewallScope` compares scopes by network prefix — a light check, not an exact comparison.
+- **The firewall rules touched are all enabled inbound rules whose local port is 5985**, on the target.
+- **The SSH installers** support `apt`, `dnf`, `yum` and `pacman` on Linux and act on UFW or firewalld only; they do not create accounts or add public keys.
+- **Measured claims.** The localized-Windows and download observations in [Gotchas](#gotchas-baked-in) are reported as they were observed; the cause of the failed large download was not established.
+
+## Documentation map
+
+| Document | What it covers |
+|---|---|
+| This README | the whole module: concepts, setup, usage, SSH transport, subnets, security, commands, config, gotchas, troubleshooting |
+| [docs/ssh-server-setup.md](docs/ssh-server-setup.md) | the optional Windows (Win32-OpenSSH) and Linux SSH-server installers, flags, firewall behaviour and verification |
+| [config/hosts.example.psd1](config/hosts.example.psd1) | annotated config template, including ZeroTier, LAN, SSH and Linux examples |
+| [CONTRIBUTING.md](CONTRIBUTING.md) | scope, coding conventions (each prevents a bug already hit), manual testing, commit rules |
+| `functions/` | one file per command (plus the platform and ssh helpers); `Invoke-WinMeshSsh.ps1` holds the ssh transport internals |
+| `scripts/windows/`, `scripts/linux/` | the standalone SSH-server installers |
+| [LICENSE](LICENSE) | MIT |
 
 ## Contributing
 
