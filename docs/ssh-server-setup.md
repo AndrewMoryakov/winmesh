@@ -10,6 +10,23 @@ new SSH connections from it will be refused.
 
 ## Windows: Win32-OpenSSH
 
+Check first whether the target already runs an SSH server. `OpenSSH.Server :
+NotPresent` from `Get-WindowsCapability` describes only Windows' inbox optional
+feature; a manually installed Win32-OpenSSH can be running all the same. Look at
+the service, the binary it starts, and what listens on TCP/22:
+
+```powershell
+Get-Service sshd
+(Get-CimInstance Win32_Service -Filter "Name='sshd'").PathName
+Get-NetTCPConnection -LocalPort 22 -State Listen
+```
+
+An empty `Get-NetTCPConnection` result does not prove that nothing answers on
+port 22 of an overlay address: NetBird's own SSH server was not listed there on
+a host where it demonstrably answered. The installer below recognises an
+existing installation only at `C:\Program Files\OpenSSH\sshd.exe`; an `sshd`
+service that starts a binary from any other path is not treated as one.
+
 Run PowerShell as Administrator on the target. Pick an explicit release tag
 from [Win32-OpenSSH releases](https://github.com/PowerShell/Win32-OpenSSH/releases).
 The project currently labels its newest release as a preview, so the installer
@@ -41,8 +58,8 @@ enabled inbound allow rule for TCP/22 (for example the stock
 `Enable-NetFirewallRule -Name <name>` brings one back. Rules pushed by Group
 Policy cannot be changed locally, so review those yourself. Use
 `-ExpectedSha256` when you have independently verified the archive checksum.
-Existing installations are left in place; `-ForceUpgrade` replaces them and
-stops the service, so use it only from a local console.
+An existing installation at that path is left in place; `-ForceUpgrade`
+replaces it and stops the service, so use it only from a local console.
 
 Verify on the target:
 

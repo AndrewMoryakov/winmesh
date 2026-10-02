@@ -8,3 +8,7 @@ config/hosts.psd1
 
 # Generated per-machine bootstrap scripts.
 bootstrap-*.ps1
+
+# Локальный реестр подключений (реальные адреса/учётки) — не в публичный репозиторий.
+connections.local.md
+*.local.md
